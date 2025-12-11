@@ -14,8 +14,14 @@ except Exception:
     API_ID = 0
     API_HASH = ""
 
-SESSIONS_DIR = "sessions"
-os.makedirs(SESSIONS_DIR, exist_ok=True)
+SESSIONS_DIR = "assets/sessions"
+
+if not os.path.exists(SESSIONS_DIR):
+    try:
+        os.makedirs(SESSIONS_DIR, exist_ok=True)
+    except Exception:
+        pass  # evita erro no Streamlit Cloud
+
 
 # keep active clients in-memory per Python process
 _active = {}
