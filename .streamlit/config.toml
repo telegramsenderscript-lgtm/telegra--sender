@@ -1,6 +1,2 @@
-[server]
-runOnSave = true
-headless = true
-
 [ui]
 hideSidebarNav = true
