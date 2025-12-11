@@ -48,64 +48,71 @@
       </div>
 
       <div id="status" class="mt-2 small-muted"></div>
-      <div id="ping" class="mt-1 small-muted"></div>
     </div>
   </div>
 </div>
 
 <script>
+const USER_ID = "{{ user_id }}";
+const PHONE = "{{ user.get('phone', '') }}";
+
 async function postJSON(url, data){
-  const res = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data)});
+  const res = await fetch(url, {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(data)
+  });
   return res.json();
 }
 
 document.getElementById('sendCode')?.addEventListener('click', async ()=>{
-  const r = await postJSON('/send_code', {});
+  const r = await postJSON('/api/send_code', { phone: PHONE });
   alert(JSON.stringify(r));
-  if(r.status=='code_sent'){ window.phone_hash = r.phone_code_hash; }
+  if(r.status === 'code_sent'){ window.phone_hash = r.phone_code_hash; }
 });
 
 document.getElementById('confirm')?.addEventListener('click', async ()=>{
   const code = document.getElementById('code').value;
-  const r = await postJSON('/confirm_code', {code: code, phone_hash: window.phone_hash || null});
+  const r = await postJSON('/api/confirm_code', {
+    phone: PHONE,
+    code,
+    phone_hash: window.phone_hash || null
+  });
   document.getElementById('confirmResult').innerText = JSON.stringify(r);
 });
 
 document.getElementById('listGroups')?.addEventListener('click', async ()=>{
-  const res = await fetch('/list_groups');
-  const j = await res.json();
+  const r = await postJSON('/api/list_groups', { phone: PHONE });
   const sel = document.getElementById('groups');
   sel.innerHTML = '';
 
-  if(j.status=='ok'){
-    j.groups.forEach(d=>{
+  if(r.status === 'ok'){
+    r.groups.forEach(d=>{
       const opt = document.createElement('option');
       opt.value = d.id;
       opt.text = d.name || d.id;
       sel.appendChild(opt);
     });
-  } else alert(JSON.stringify(j));
+  } else {
+    alert(JSON.stringify(r));
+  }
 });
 
 document.getElementById('startAttack')?.addEventListener('click', async ()=>{
   const gid = document.getElementById('groups').value;
   const msg = document.getElementById('message').value;
-  if(!gid || !msg){ alert('Preencha grupo e mensagem'); return; }
-  const r = await postJSON('/start_attack', {chat_id: gid, message: msg, delay_ms: 30});
+
+  const r = await postJSON('/api/start_attack', {
+    phone: PHONE,
+    chat_id: gid,
+    message: msg
+  });
+
   document.getElementById('status').innerText = JSON.stringify(r);
-
-  const poll = setInterval(async ()=>{
-    const res = await fetch('/user/logs/{{ user_id }}');
-    const logs = await res.json();
-    document.getElementById('status').innerText = 'Tentativas: ' + logs.filter(l=>l.action=='sent_message').length;
-  }, 1000);
-
-  window._attack_poll = poll;
 });
 
 document.getElementById('stopAttack')?.addEventListener('click', async ()=>{
-  await postJSON('/stop_attack', {});
-  clearInterval(window._attack_poll);
+  await fetch('/api/stop_attack', { method: 'POST' });
   document.getElementById('status').innerText = 'Parado';
 });
 </script>
