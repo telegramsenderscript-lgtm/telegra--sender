@@ -1,104 +1,83 @@
-# core/telegram_client.py
-import os, asyncio
+import os
+import json
+import asyncio
 from telethon import TelegramClient
 from telethon.sessions import StringSession
-from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError, PhoneCodeExpiredError
-from core.data import load_session, save_session, remove_session
 
-API_ID = int(os.environ.get("API_ID") or 0)
-API_HASH = os.environ.get("API_HASH") or None
+API_ID = int(os.environ.get("API_ID"))
+API_HASH = os.environ.get("API_HASH")
 
-_active_clients = {}
+SESSIONS_DIR = "sessions"
+os.makedirs(SESSIONS_DIR, exist_ok=True)
 
-def _session_string_to_client(session_string):
-    return TelegramClient(StringSession(session_string), API_ID, API_HASH)
+_clients = {}           # uid -> TelegramClient
+_client_locks = {}      # uid -> asyncio.Lock()
 
-def _client_from_uid(uid):
-    if uid in _active_clients:
-        return _active_clients[uid]
-    session_string = load_session(uid)
-    if session_string:
-        client = _session_string_to_client(session_string)
-    else:
-        client = TelegramClient(StringSession(), API_ID, API_HASH)
-    _active_clients[uid] = client
-    return client
 
-async def start_client_for_user(uid: str, phone: str):
-    if not API_ID or not API_HASH:
-        return {"status":"error","error":"API_ID/API_HASH not configured"}
-    client = _client_from_uid(uid)
-    if not client.is_connected():
+def _session_file(uid):
+    return os.path.join(SESSIONS_DIR, f"{uid}.session")
+
+
+async def _get_client(uid):
+    if uid not in _client_locks:
+        _client_locks[uid] = asyncio.Lock()
+
+    async with _client_locks[uid]:
+        if uid in _clients:
+            return _clients[uid]
+
+        path = _session_file(uid)
+        session = StringSession(open(path).read()) if os.path.exists(path) else StringSession()
+
+        client = TelegramClient(session, API_ID, API_HASH)
         await client.connect()
-    if not await client.is_user_authorized():
-        try:
-            sent = await client.send_code_request(phone)
-            _active_clients[uid] = client
-            return {"status":"code_sent", "phone_code_hash": getattr(sent, "phone_code_hash", None)}
-        except Exception as e:
-            return {"status":"error","error": str(e)}
-    else:
-        _active_clients[uid] = client
-        return {"status":"authorized"}
 
-async def confirm_code_for_user(uid: str, phone: str, code: str, phone_code_hash=None):
-    if not API_ID or not API_HASH:
-        return {"status":"error","error":"API_ID/API_HASH not configured"}
-    client = _client_from_uid(uid)
-    if not client.is_connected():
-        await client.connect()
+        _clients[uid] = client
+        return client
+
+
+async def start_client_for_user(uid, phone):
+    client = await _get_client(uid)
+
+    if await client.is_user_authorized():
+        return {"status": "authorized"}
+
+    res = await client.send_code_request(phone)
+    return {"status": "code_sent", "phone_code_hash": res.phone_code_hash}
+
+
+async def confirm_code_for_user(uid, phone, code, phone_code_hash):
+    client = await _get_client(uid)
+
     try:
-        if phone_code_hash:
-            await client.sign_in(phone, code, phone_code_hash=phone_code_hash)
-        else:
-            await client.sign_in(phone, code)
-    except SessionPasswordNeededError:
-        return {"status":"2fa_required"}
-    except PhoneCodeInvalidError:
-        return {"status":"invalid_code"}
-    except PhoneCodeExpiredError:
-        return {"status":"code_expired"}
+        await client.sign_in(phone=phone, code=code, phone_code_hash=phone_code_hash)
     except Exception as e:
-        return {"status":"error","error":str(e)}
-    try:
-        ss = client.session.save()
-        save_session(uid, ss)
-    except:
-        pass
-    _active_clients[uid] = client
-    return {"status":"authorized"}
+        if "2FA" in str(e):
+            return {"status": "2fa_required"}
+        return {"status": "error", "error": str(e)}
 
-async def list_dialogs_for_user(uid: str):
-    if not API_ID or not API_HASH:
-        return {"status":"error","error":"API_ID/API_HASH not configured"}
-    client = _client_from_uid(uid)
-    if not client.is_connected():
-        await client.connect()
-    if not await client.is_user_authorized():
-        return {"status":"error","error":"not_authorized"}
-    dialogs = []
-    async for d in client.iter_dialogs():
-        title = getattr(d.entity, "title", getattr(d.entity, "first_name", None))
-        dialogs.append({"id": d.id, "title": title})
-    return {"status":"ok","dialogs": dialogs}
+    open(_session_file(uid), "w").write(client.session.save())
+    return {"status": "authorized"}
 
-async def send_message_for_user(uid: str, target, message: str):
-    client = _client_from_uid(uid)
-    if not client.is_connected():
-        await client.connect()
+
+async def list_dialogs_for_user(uid):
+    client = await _get_client(uid)
+    dialogs = await client.get_dialogs()
+
+    return {
+        "status": "ok",
+        "groups": [
+            {"name": d.name, "id": d.id}
+            for d in dialogs
+        ]
+    }
+
+
+async def send_message_for_user(uid, chat_id, msg):
+    client = await _get_client(uid)
+
     try:
-        await client.send_message(int(target), message)
-        return {"status":"ok"}
+        await client.send_message(int(chat_id), msg)
+        return {"status": "ok"}
     except Exception as e:
-        return {"status":"error","error": str(e)}
-
-async def logout_user_for_user(uid: str):
-    client = _active_clients.get(uid)
-    if client:
-        try:
-            await client.disconnect()
-        except:
-            pass
-        _active_clients.pop(uid, None)
-    removed = remove_session(uid)
-    return {"status":"logged_out", "removed": removed}
+        return {"status": "error", "error": str(e)}
