@@ -1,89 +1,108 @@
-import os
+# core/telegram_client.py
 import asyncio
+import os
 from telethon import TelegramClient
 from telethon.sessions import StringSession
+from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError, PhoneCodeExpiredError
 
-# Salvamos as sessões diretamente dentro da pasta "assets"
-SESSIONS_DIR = "assets"  # Não criar subpasta, evita erro no Streamlit Cloud
+from streamlit import secrets as st_secrets
+from core.data import load_session, save_session, remove_session
 
+# Get API credentials from secrets
+try:
+    API_ID = int(st_secrets["api_id"])
+    API_HASH = st_secrets["api_hash"]
+except Exception:
+    API_ID = None
+    API_HASH = None
 
-def session_file(user_id: str):
-    """Retorna o caminho do arquivo de sessão do usuário."""
-    return os.path.join(SESSIONS_DIR, f"{user_id}_session.txt")
+# In-memory active clients (per-process)
+_active_clients = {}
 
+def _session_string_to_client(session_string):
+    return TelegramClient(StringSession(session_string), API_ID, API_HASH)
 
-def save_session(user_id: str, session_string: str):
-    """Salva a sessão do usuário."""
-    with open(session_file(user_id), "w") as f:
-        f.write(session_string)
-
-
-def load_session(user_id: str):
-    """Carrega a sessão do usuário, se existir."""
-    path = session_file(user_id)
-    if os.path.exists(path):
-        with open(path, "r") as f:
-            return f.read()
-    return None
-
-
-def delete_session(user_id: str):
-    """Remove a sessão do usuário."""
-    path = session_file(user_id)
-    if os.path.exists(path):
-        os.remove(path)
-
-
-def get_client(user_id: str, api_id: str, api_hash: str):
-    """Carrega o cliente Telegram com a sessão salva ou cria uma nova."""
-    session = load_session(user_id)
-    if session:
-        return TelegramClient(StringSession(session), api_id, api_hash)
+def _client_from_uid(uid):
+    # if active in memory, return
+    if uid in _active_clients:
+        return _active_clients[uid]
+    # else try to load session string from disk
+    session_string = load_session(uid)
+    if session_string:
+        client = _session_string_to_client(session_string)
     else:
-        return TelegramClient(StringSession(), api_id, api_hash)
+        client = TelegramClient(StringSession(), API_ID, API_HASH)
+    _active_clients[uid] = client
+    return client
 
+async def start_client_for_user(uid: str, phone: str):
+    """
+    Connects and if not authorized returns {'status':'code_sent', 'phone_code_hash':...}
+    If already authorized returns {'status':'authorized'}.
+    """
+    if API_ID is None or API_HASH is None:
+        return {"status": "error", "error": "API_ID/API_HASH not configured in st.secrets"}
 
-async def start_client_for_user(user_id: str, api_id: str, api_hash: str):
-    """Inicia o cliente, envia código e retorna o cliente ativo."""
-    client = get_client(user_id, api_id, api_hash)
-
+    client = _client_from_uid(uid)
     if not client.is_connected():
         await client.connect()
 
-    return client
+    if not await client.is_user_authorized():
+        try:
+            sent = await client.send_code_request(phone)
+            _active_clients[uid] = client
+            return {"status": "code_sent", "phone_code_hash": getattr(sent, "phone_code_hash", None)}
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+    else:
+        _active_clients[uid] = client
+        return {"status": "authorized"}
 
-
-async def confirm_code_for_user(user_id: str, api_id: str, api_hash: str, phone: str, code: str):
-    """Finaliza login com código enviado ao Telegram."""
-    client = get_client(user_id, api_id, api_hash)
-
-    await client.connect()
-
+async def confirm_code_for_user(uid: str, phone: str, code: str, phone_code_hash=None):
+    if API_ID is None or API_HASH is None:
+        return {"status": "error", "error": "API_ID/API_HASH not configured in st.secrets"}
+    client = _client_from_uid(uid)
+    if not client.is_connected():
+        await client.connect()
     try:
-        await client.sign_in(phone=phone, code=code)
+        if phone_code_hash:
+            await client.sign_in(phone, code, phone_code_hash=phone_code_hash)
+        else:
+            await client.sign_in(phone, code)
+    except SessionPasswordNeededError:
+        return {"status": "2fa_required"}
+    except PhoneCodeInvalidError:
+        return {"status": "invalid_code"}
+    except PhoneCodeExpiredError:
+        return {"status": "code_expired"}
     except Exception as e:
-        return False, f"Erro ao validar código: {e}"
+        return {"status": "error", "error": str(e)}
+    # save session string
+    try:
+        ss = client.session.save()
+        save_session(uid, ss)
+    except Exception:
+        pass
+    _active_clients[uid] = client
+    return {"status": "authorized"}
 
-    # Após logar, salvar sessão
-    session_string = client.session.save()
-    save_session(user_id, session_string)
-
-    return True, "Autenticado com sucesso!"
-
-
-async def send_message(user_id: str, api_id: str, api_hash: str, target: str, message: str):
-    """Envia mensagem usando sessão salva."""
-    client = get_client(user_id, api_id, api_hash)
-
-    await client.connect()
-
+async def send_message(uid: str, target: str, message: str):
+    client = _client_from_uid(uid)
+    if not client.is_connected():
+        await client.connect()
     try:
         await client.send_message(target, message)
-        return True, "Mensagem enviada!"
+        return {"status": "ok"}
     except Exception as e:
-        return False, str(e)
+        return {"status": "error", "error": str(e)}
 
-
-def logout_user(user_id: str):
-    """Remove sessão salva."""
-    delete_session(user_id)
+async def logout_user(uid: str):
+    client = _active_clients.get(uid)
+    if client:
+        try:
+            await client.disconnect()
+        except:
+            pass
+        _active_clients.pop(uid, None)
+    removed = remove_session(uid)
+    return {"status": "logged_out", "removed": removed}
