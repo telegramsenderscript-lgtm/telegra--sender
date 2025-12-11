@@ -1,59 +1,46 @@
+# core/auth.py
 import streamlit as st
-from core.data import load_users
+from core.data import load_users, append_user_log, now_iso
 
-# -------------------------
-# LOGIN CHECK
-# -------------------------
 def is_logged_in():
     return "user" in st.session_state and st.session_state.user is not None
 
-
-# -------------------------
-# GET CURRENT USER
-# -------------------------
 def get_current_user():
     if not is_logged_in():
         return None
     users = load_users()
-    return users.get(st.session_state.user)
+    uid = st.session_state.user
+    return users.get(uid)
 
-
-# -------------------------
-# LOGOUT
-# -------------------------
-def logout():
-    if "user" in st.session_state:
-        del st.session_state["user"]
-    st.session_state.clear()
-    st.experimental_rerun()
-
-
-# -------------------------
-# LOGIN SCREEN
-# -------------------------
 def login_screen():
-    st.title("🔐 Login — Telegram Sender")
+    st.title("Telegram Sender")
+    st.subheader("🔐 Login — Painel Premium")
 
-    user_input = st.text_input("Usuário")
-    pwd_input = st.text_input("Senha", type="password")
+    uid = st.text_input("Usuário")
+    pwd = st.text_input("Senha", type="password")
 
     if st.button("Entrar"):
         users = load_users()
-
-        if user_input not in users:
+        user = users.get(uid)
+        if not user:
             st.error("Usuário não encontrado.")
-            return
-
-        user = users[user_input]
-
-        if not user.get("active", False):
-            st.error("Conta inativa.")
-            return
-
-        if user.get("password") != pwd_input:
+            return False
+        if user.get("password") != pwd:
             st.error("Senha incorreta.")
-            return
-
-        st.session_state.user = user_input
-        st.success("Login realizado!")
+            return False
+        # login ok, set session
+        st.session_state.user = uid
+        append_user_log(uid, {"action": "login", "ts": now_iso()})
         st.experimental_rerun()
+        return True
+    return False
+
+def logout():
+    uid = st.session_state.get("user")
+    if uid:
+        append_user_log(uid, {"action": "logout", "ts": now_iso()})
+    # clear keys we used
+    keys = list(st.session_state.keys())
+    for k in keys:
+        del st.session_state[k]
+    st.experimental_rerun()
