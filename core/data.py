@@ -1,76 +1,40 @@
 import json
 import os
-import shutil
 from datetime import datetime
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ASSETS_DIR = os.path.join(BASE_DIR, "assets")
-USERS_FILE = os.path.join(ASSETS_DIR, "users.json")
-GLOBAL_LOG = os.path.join(ASSETS_DIR, "logs.json")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-LOGS_DIR = os.path.join(BASE_DIR, "data", "logs")
+USERS_FILE = os.path.join(BASE_DIR, "..", "users.json")
+LOGS_FILE = os.path.join(BASE_DIR, "..", "logs.json")
 
 
-def ensure_dirs():
-    os.makedirs(ASSETS_DIR, exist_ok=True)
-    os.makedirs(LOGS_DIR, exist_ok=True)
-    if not os.path.exists(USERS_FILE):
-        with open(USERS_FILE, "w") as f:
-            json.dump({}, f, indent=2)
+# =============================== TEMPO =====================================
+
+def now_iso():
+    return datetime.utcnow().isoformat()
 
 
-def read_json(path, default):
-    try:
-        with open(path, "r") as f:
-            return json.load(f)
-    except:
-        return default
-
-
-def write_json(path, data):
-    with open(path, "w") as f:
-        json.dump(data, f, indent=2)
-
-
-# ---------------- USERS ----------------
+# =============================== USERS =====================================
 
 def load_users():
-    ensure_dirs()
-    return read_json(USERS_FILE, {})
+    if not os.path.exists(USERS_FILE):
+        return {}
+    with open(USERS_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 
-def save_users(users):
-    write_json(USERS_FILE, users)
+def save_users(users: dict):
+    with open(USERS_FILE, "w", encoding="utf-8") as f:
+        json.dump(users, f, indent=2, ensure_ascii=False)
 
 
-def add_user(uid, password, role="user", active=True, phone=""):
+def update_user(uid, data: dict):
     users = load_users()
-    if uid in users:
-        raise ValueError("Usuário já existe")
-
-    users[uid] = {
-        "password": password,
-        "role": role,
-        "active": active,
-        "phone": phone
-    }
+    if uid not in users:
+        return False
+    users[uid].update(data)
     save_users(users)
-
-
-def edit_user(old_uid, password=None, active=None, phone=None):
-    users = load_users()
-    if old_uid not in users:
-        raise ValueError("Usuário não existe")
-
-    u = users[old_uid]
-    if password:
-        u["password"] = password
-    if active is not None:
-        u["active"] = active
-    if phone is not None:
-        u["phone"] = phone
-
-    save_users(users)
+    return True
 
 
 def delete_user(uid):
@@ -78,17 +42,40 @@ def delete_user(uid):
     if uid in users:
         del users[uid]
         save_users(users)
-
-    # remove logs
-    log_path = os.path.join(LOGS_DIR, f"{uid}.json")
-    if os.path.exists(log_path):
-        os.remove(log_path)
+        return True
+    return False
 
 
-def toggle_active(uid, state):
-    users = load_users()
-    if uid not in users:
-        raise ValueError("Usuário não existe")
+# =============================== LOGS =======================================
 
-    users[uid]["active"] = state
-    save_users(users)
+def load_logs():
+    if not os.path.exists(LOGS_FILE):
+        return []
+    with open(LOGS_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def save_logs(logs: list):
+    with open(LOGS_FILE, "w", encoding="utf-8") as f:
+        json.dump(logs, f, indent=2, ensure_ascii=False)
+
+
+def append_user_log(uid, entry: dict):
+    logs = load_logs()
+    entry["uid"] = uid
+    entry["ts"] = now_iso()
+    logs.append(entry)
+    save_logs(logs)
+    return True
+
+
+def get_user_logs(uid):
+    logs = load_logs()
+    return [l for l in logs if l.get("uid") == uid]
+
+
+def clear_user_logs(uid):
+    logs = load_logs()
+    logs = [l for l in logs if l.get("uid") != uid]
+    save_logs(logs)
+    return True
