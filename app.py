@@ -1,6 +1,8 @@
 import streamlit as st
-import json
-from navigation import setup_navigation
+from core.data import load_users
+
+st.write("DEBUG USERS:", load_users())
+
 
 st.set_page_config(page_title="Telegram Sender — Premium Login", layout="centered")
 
@@ -48,3 +50,4 @@ if st.button("Entrar"):
             st.switch_page("pages/2_Painel_Usuario.py")
     else:
         st.error("Credenciais inválidas ou conta inativa.")
+
