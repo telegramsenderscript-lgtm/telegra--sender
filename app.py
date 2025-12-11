@@ -1,50 +1,46 @@
 import streamlit as st
-import json
-from navigation import setup_navigation
+from core.auth import is_logged_in, login_screen, get_current_user
 
-st.set_page_config(page_title="Telegram Sender — Premium Login", layout="centered")
 
-# --- Carrega DB de usuários ---
-def load_users():
-    try:
-        with open("assets/users.json", "r", encoding="utf-8") as f:
-            return json.load(f)
-    except:
-        return {}
+st.set_page_config(
+    page_title="Telegram Sender",
+    page_icon="🚀",
+    initial_sidebar_state="collapsed"
+)
 
-users_db = load_users()
+# Oculta o menu lateral global da multipage
+hide_menu = """
+<style>
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+header {visibility: hidden;}
+</style>
+"""
+st.markdown(hide_menu, unsafe_allow_html=True)
 
-# --- Reset se clicou Sair ---
-if "logout" in st.session_state:
-    st.session_state.clear()
 
-# --- Setup Navigation ---
-setup_navigation()
+# -----------------------------------
+# VERIFICA LOGIN
+# -----------------------------------
+if not is_logged_in():
+    login_screen()
+    st.stop()
 
-# Se já logado, redireciona
-role = st.session_state.get("role")
-if role == "user":
-    st.switch_page("pages/2_Painel_Usuario.py")
-elif role == "admin":
+# -----------------------------------
+# APÓS LOGIN → REDIRECIONAMENTO
+# -----------------------------------
+user = get_current_user()
+
+if user is None:
+    st.error("Erro interno: usuário não carregado.")
+    st.stop()
+
+role = user.get("role", "user")
+
+# Se for admin → manda para /Admin
+if role == "admin":
     st.switch_page("pages/1_Admin.py")
 
-# --- Tela de Login ---
-st.title("Telegram Sender")
-st.subheader("🔐 Login – Painel Premium")
-
-uid = st.text_input("ID do cliente")
-pwd = st.text_input("Senha", type="password")
-
-if st.button("Entrar"):
-    user = users_db.get(uid)
-
-    if user and user.get("password") == pwd and user.get("active", True):
-        st.session_state.role = "admin" if user.get("admin", False) else "user"
-        st.session_state.user_id = uid
-
-        if st.session_state.role == "admin":
-            st.switch_page("pages/1_Admin.py")
-        else:
-            st.switch_page("pages/2_Painel_Usuario.py")
-    else:
-        st.error("Credenciais inválidas ou conta inativa.")
+# Se for cliente → manda para painel
+else:
+    st.switch_page("pages/2_Painel_Usuario.py")
