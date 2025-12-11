@@ -1,25 +1,110 @@
 # core/telegram_client.py
 import asyncio
+import os
 from telethon import TelegramClient
-from telethon.sessions import MemorySession
+from telethon.errors import SessionPasswordNeededError
+from telethon.errors import PhoneCodeInvalidError, PhoneCodeExpiredError
 
-# COLOQUE SEUS dados aqui (ou usar st.secrets)
-API_ID = 32994616
-API_HASH = "cf912432fa5bc84e7360944567697b08"
+try:
+    from streamlit import secrets
+    API_ID = int(secrets["api_id"])
+    API_HASH = secrets["api_hash"]
+except Exception:
+    # fallback values (you must set real ones in secrets)
+    API_ID = 0
+    API_HASH = ""
 
-def _make_loop_and_client():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    client = TelegramClient(MemorySession(), API_ID, API_HASH, loop=loop)
-    loop.run_until_complete(client.connect())
-    return client, loop
+SESSIONS_DIR = "sessions"
+os.makedirs(SESSIONS_DIR, exist_ok=True)
 
-def get_client():
-    # armazenar em st.session_state is not available here (module-level),
-    # so return a singleton stored in module globals
-    global _CLIENT, _LOOP
+# keep active clients in-memory per Python process
+_active = {}
+
+def _session_file(uid):
+    return os.path.join(SESSIONS_DIR, f"{uid}.session")
+
+def _make_client(uid):
+    session = _session_file(uid)
+    client = TelegramClient(session, API_ID, API_HASH)
+    return client
+
+async def _ensure_connect(client):
+    if not client.is_connected():
+        await client.connect()
+
+async def start_client_for_user(uid, phone):
+    """
+    Creates client and tries to connect. If not authorized, returns "code" state.
+    """
+    client = _make_client(uid)
+    await _ensure_connect(client)
+
+    if not await client.is_user_authorized():
+        # request code
+        try:
+            sent = await client.send_code_request(phone)
+            # keep client instance in _active for later confirmation
+            _active[uid] = client
+            return {"status": "code_sent", "phone_code_hash": getattr(sent, "phone_code_hash", None)}
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+    else:
+        _active[uid] = client
+        return {"status": "authorized"}
+
+async def confirm_code_for_user(uid, phone, code, phone_code_hash=None):
+    """
+    Uses Telethon sign_in to complete login. Returns status.
+    """
+    # create client from session file (or existing)
+    client = _active.get(uid) or _make_client(uid)
+    await _ensure_connect(client)
     try:
-        return _CLIENT, _LOOP
-    except NameError:
-        _CLIENT, _LOOP = _make_loop_and_client()
-        return _CLIENT, _LOOP
+        if phone_code_hash:
+            await client.sign_in(phone, code, phone_code_hash=phone_code_hash)
+        else:
+            await client.sign_in(phone, code)
+    except SessionPasswordNeededError:
+        return {"status": "2fa_required"}
+    except PhoneCodeInvalidError:
+        return {"status": "invalid_code"}
+    except PhoneCodeExpiredError:
+        return {"status": "code_expired"}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+    _active[uid] = client
+    return {"status": "authorized"}
+
+async def send_message(uid, target, message):
+    """
+    Sends message using the user's session client.
+    """
+    client = _active.get(uid)
+    if not client:
+        # try instantiate from session file
+        client = _make_client(uid)
+        await _ensure_connect(client)
+        if not await client.is_user_authorized():
+            return {"status": "not_authorized"}
+        _active[uid] = client
+
+    try:
+        await client.send_message(target, message)
+        return {"status": "ok"}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+async def logout_user(uid):
+    client = _active.get(uid)
+    if client:
+        try:
+            await client.disconnect()
+        except:
+            pass
+        if uid in _active:
+            del _active[uid]
+    # remove session files
+    from core.data import remove_session
+    removed = remove_session(uid)
+    return {"status": "logged_out", "removed_files": removed}
