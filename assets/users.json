@@ -1,19 +1,18 @@
 {
-  "admin": {
-    "password": "admin123",
-    "role": "admin",
-    "active": true,
-    "phone": ""
-  }
-}
-,
-{
+    "admin": {
+        "password": "admin123",
+        "role": "admin",
+        "active": true,
+        "phone": ""
+    },
+
     "cliente01": {
         "password": "1234",
         "active": true,
         "phone": "+5519995677873",
         "expires": null
     },
+
     "cliente02": {
         "password": "abcd",
         "active": false,
