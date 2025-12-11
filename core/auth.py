@@ -1,48 +1,22 @@
-# core/auth.py
+# app.py
 import streamlit as st
-from core.data import load_users, save_users, now_iso, append_log
+from core.auth import login_screen, is_logged_in, get_current_user
+from navigation import setup_navigation
 
-def login_screen():
-    st.title("Telegram Sender")
-    st.subheader("🔐 Login — Painel Premium")
-    uid = st.text_input("ID do cliente")
-    pwd = st.text_input("Senha", type="password")
+st.set_page_config(page_title="Telegram Sender", layout="centered")
+setup_navigation()
 
-    if st.button("Entrar"):
-        users = load_users()
-        user = users.get(uid)
-        if not user:
-            st.error("Usuário não encontrado.")
-            return False
-        if user.get("password") != pwd:
-            st.error("Senha incorreta.")
-            return False
-        if not user.get("active", False):
-            st.error("Assinatura inativa. Contate o administrador.")
-            return False
+# If logged, redirect user by role:
+if is_logged_in():
+    user = get_current_user()
+    role = user.get("role", "user")
+    if role == "admin":
+        st.experimental_set_query_params(page="admin")
+    else:
+        st.experimental_set_query_params(page="user")
+    # show minimal message
+    st.success(f"Você já está logado como {st.session_state.get('user_id')}. Use o menu.")
+    st.stop()
 
-        # success
-        st.session_state.role = user.get("role", "user")
-        st.session_state.user_id = uid
-        st.session_state.username = uid
-        append_log({"user": uid, "action": "login", "ts": now_iso()})
-        st.experimental_rerun()
-        return True
-    return False
-
-def logout():
-    user = st.session_state.get("user_id")
-    if user:
-        append_log({"user": user, "action": "logout", "ts": now_iso()})
-    for k in list(st.session_state.keys()):
-        del st.session_state[k]
-    st.experimental_rerun()
-
-def is_logged_in():
-    return "user_id" in st.session_state
-
-def get_current_user():
-    if not is_logged_in():
-        return None
-    users = load_users()
-    return users.get(st.session_state.user_id)
+# Not logged => show login screen
+login_screen()
