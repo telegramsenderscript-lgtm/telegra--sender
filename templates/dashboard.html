@@ -1,45 +1,83 @@
 {% extends "base.html" %}
 {% block content %}
 
-<h3 class="mb-4">Painel</h3>
+<h3>Painel</h3>
 
 {% if user.role == "admin" %}
-    <div class="card p-4">
-        <h4>⚙️ Administração</h4>
-        <p>Apenas admin vê isso.</p>
-        <a class="btn btn-danger" href="/admin">Gerenciar Usuários</a>
-    </div>
-
+  <div class="card p-3 mb-3">
+    <h5>⚙️ Painel Administrativo</h5>
+    <p>Use o painel para gerenciar usuários.</p>
+    <a class="btn btn-danger" href="/admin">Gerenciar Usuários</a>
+  </div>
 {% else %}
-
-<div class="card p-3 mb-3">
+  <div class="card p-3 mb-3">
     <h5>Bem-vindo, {{ user_id }}</h5>
-    <p class="small-muted">Telefone cadastrado: <b>{{ user.phone }}</b></p>
+    <p class="small-muted">Telefone cadastrado: <b>{{ user.phone or '(não cadastrado)' }}</b></p>
     <p>Status: {% if user.active %}<span class="text-success">ATIVA</span>{% else %}<span class="text-danger">INATIVA</span>{% endif %}</p>
 
     {% if user.active %}
-        <button id="sendCode" class="btn btn-primary">📩 Enviar código</button>
+      <button id="sendCode" class="btn btn-primary">📩 Enviar código</button>
     {% else %}
-        <button class="btn btn-secondary" disabled>Assinatura inativa</button>
+      <button class="btn btn-secondary" disabled>Assinatura inativa</button>
     {% endif %}
-</div>
+  </div>
 
-<div class="card p-3 mb-3">
+  <div class="card p-3 mb-3">
     <h6>Confirmar código</h6>
     <input id="code" class="form-control mb-2" placeholder="Código recebido">
     <button id="confirm" class="btn btn-primary">Confirmar</button>
     <div id="confirmResult" class="mt-2"></div>
-</div>
+  </div>
 
-<div class="card p-3">
+  <div class="card p-3">
     <h6>Enviar mensagem</h6>
     <button id="listGroups" class="btn btn-sm btn-primary mb-2">Carregar grupos</button>
     <select id="groups" class="form-control mb-2"></select>
     <textarea id="message" class="form-control mb-2" placeholder="Mensagem"></textarea>
-
     <button id="startAttack" class="btn btn-danger">🚀 Enviar</button>
-</div>
+  </div>
 
+  <script>
+  async function postJSON(url, data){
+    const res = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data)});
+    return res.json();
+  }
+
+  document.getElementById('sendCode')?.addEventListener('click', async ()=> {
+    const phone = "{{ user.phone }}";
+    const r = await postJSON('/api/send_code', {phone});
+    alert(JSON.stringify(r));
+    if(r.status=='ok'){ window.phone_hash = r.phone_code_hash; }
+  });
+
+  document.getElementById('confirm')?.addEventListener('click', async ()=> {
+    const code = document.getElementById('code').value;
+    const r = await postJSON('/api/confirm_code', {phone: "{{ user.phone }}", code: code, phone_hash: window.phone_hash || null});
+    document.getElementById('confirmResult').innerText = JSON.stringify(r);
+  });
+
+  document.getElementById('listGroups')?.addEventListener('click', async ()=> {
+    const r = await postJSON('/api/list_groups', {phone: "{{ user.phone }}"});
+    if(r.status=='ok'){
+      const sel = document.getElementById('groups');
+      sel.innerHTML = '';
+      r.dialogs.forEach(d=>{
+        const opt = document.createElement('option');
+        opt.value = d.id;
+        opt.text = d.name || d.id;
+        sel.appendChild(opt);
+      });
+    } else alert(JSON.stringify(r));
+  });
+
+  document.getElementById('startAttack')?.addEventListener('click', async ()=> {
+    const gid = document.getElementById('groups').value;
+    const msg = document.getElementById('message').value;
+    if(!gid || !msg){ alert('Preencha grupo e mensagem'); return; }
+    const r = await postJSON('/api/start_attack', {phone: "{{ user.phone }}", chat_id: gid, message: msg});
+    alert(JSON.stringify(r));
+  });
+  </script>
 {% endif %}
 
 {% endblock %}
