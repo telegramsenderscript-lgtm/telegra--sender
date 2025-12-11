@@ -1,46 +1,36 @@
+# app.py
 import streamlit as st
-from core.auth import is_logged_in, login_screen, get_current_user
+from core.auth import login_screen, is_logged_in, get_current_user
+from core.data import load_users
 
+st.set_page_config(page_title="Telegram Sender", layout="centered")
 
-st.set_page_config(
-    page_title="Telegram Sender",
-    page_icon="🚀",
-    initial_sidebar_state="collapsed"
-)
-
-# Oculta o menu lateral global da multipage
+# Hide default Streamlit menu
 hide_menu = """
 <style>
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
-header {visibility: hidden;}
 </style>
 """
 st.markdown(hide_menu, unsafe_allow_html=True)
 
-
-# -----------------------------------
-# VERIFICA LOGIN
-# -----------------------------------
+# If not logged -> show login
 if not is_logged_in():
     login_screen()
     st.stop()
 
-# -----------------------------------
-# APÓS LOGIN → REDIRECIONAMENTO
-# -----------------------------------
+# Logged -> get user and redirect to proper page
 user = get_current_user()
-
 if user is None:
-    st.error("Erro interno: usuário não carregado.")
+    st.error("Erro interno: usuário não encontrado na sessão.")
     st.stop()
 
-role = user.get("role", "user")
-
-# Se for admin → manda para /Admin
+role = user.get("role","user")
 if role == "admin":
-    st.switch_page("pages/1_Admin.py")
-
-# Se for cliente → manda para painel
+    st.experimental_set_query_params(page="admin")
+    st.write("Redirecionando para painel admin...")
+    st.stop()
 else:
-    st.switch_page("pages/2_Painel_Usuario.py")
+    st.experimental_set_query_params(page="user")
+    st.write("Redirecionando para painel usuário...")
+    st.stop()
