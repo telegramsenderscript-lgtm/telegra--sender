@@ -1,30 +1,31 @@
 import json
-import streamlit as st
 
 USERS_FILE = "assets/users.json"
-LOG_FILE = "assets/logs.json"
-
-# ---------------- USERS ----------------
+LOGS_FILE = "assets/logs.json"
 
 def load_users():
-    with open(USERS_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-def load_user(uid):
-    return load_users().get(uid)
+    try:
+        with open(USERS_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return []
 
 def save_users(data):
-    with open(USERS_FILE, "w", encoding="utf-8") as f:
+    with open(USERS_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
-# ---------------- LOGS ----------------
+def load_logs():
+    try:
+        with open(LOGS_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return []
 
-def add_log(entry):
-    with open(LOG_FILE, "r", encoding="utf-8") as f:
-        logs = json.load(f)
+def save_logs(data):
+    with open(LOGS_FILE, "w") as f:
+        json.dump(data, f, indent=4)
 
-    logs.append(entry)
-
-    with open(LOG_FILE, "w", encoding="utf-8") as f:
-        json.dump(logs, f, indent=4)
-
+def add_log(user, action):
+    logs = load_logs()
+    logs.append({"user": user, "action": action})
+    save_logs(logs)
