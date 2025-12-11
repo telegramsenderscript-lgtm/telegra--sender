@@ -23,10 +23,10 @@ def login():
         username = request.form.get("username")
         password = request.form.get("password")
 
-        for uid, u in users.items():
-            if u["username"] == username and u["password"] == password:
-                login_user(uid)
-                return redirect(url_for("dashboard"))
+        # Agora o username é o próprio UID (admin, cliente01, etc)
+        if username in users and users[username]["password"] == password:
+            login_user(username)
+            return redirect(url_for("dashboard"))
 
         return render_template("login.html", error="Usuário ou senha incorretos.")
 
