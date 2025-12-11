@@ -1,11 +1,27 @@
 {% extends "base.html" %}
 {% block content %}
+
 <div class="row">
+
+  <!-- BLOCO ADMIN -->
+  {% if user.get('role') == 'admin' %}
+  <div class="col-md-12">
+    <div class="card p-3 mb-4 border-danger">
+      <h4>⚙️ Painel Administrativo</h4>
+      <p>Acesso exclusivo do administrador.</p>
+      <a href="/admin" class="btn btn-danger">Gerenciar usuários</a>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- BLOCO NORMAL -->
   <div class="col-md-6">
+
     <div class="card p-3">
       <h5>Bem-vindo, {{ user_id }}</h5>
       <p class="small-muted">Telefone cadastrado: <b>{{ user.get('phone','(não cadastrado)') }}</b></p>
       <p>Status: {% if user.get('active') %}<span class="text-success">ATIVA</span>{% else %}<span class="text-danger">INATIVA</span>{% endif %}</p>
+
       {% if user.get('active') %}
         <button id="sendCode" class="btn btn-primary">📩 Enviar código</button>
       {% else %}
@@ -25,10 +41,12 @@
       <button id="listGroups" class="btn btn-sm btn-primary mb-2">Carregar grupos</button>
       <select id="groups" class="form-control mb-2"></select>
       <textarea id="message" class="form-control mb-2" placeholder="Mensagem"></textarea>
+
       <div class="d-flex gap-2">
         <button id="startAttack" class="btn btn-danger">🚀 ENVIAR EM LOOP</button>
         <button id="stopAttack" class="btn btn-secondary">❌ CANCELAR</button>
       </div>
+
       <div id="status" class="mt-2 small-muted"></div>
       <div id="ping" class="mt-1 small-muted"></div>
     </div>
@@ -58,11 +76,12 @@ document.getElementById('listGroups')?.addEventListener('click', async ()=>{
   const j = await res.json();
   const sel = document.getElementById('groups');
   sel.innerHTML = '';
+
   if(j.status=='ok'){
-    j.dialogs.forEach(d=>{
+    j.groups.forEach(d=>{
       const opt = document.createElement('option');
       opt.value = d.id;
-      opt.text = d.title || d.id;
+      opt.text = d.name || d.id;
       sel.appendChild(opt);
     });
   } else alert(JSON.stringify(j));
@@ -74,12 +93,13 @@ document.getElementById('startAttack')?.addEventListener('click', async ()=>{
   if(!gid || !msg){ alert('Preencha grupo e mensagem'); return; }
   const r = await postJSON('/start_attack', {chat_id: gid, message: msg, delay_ms: 30});
   document.getElementById('status').innerText = JSON.stringify(r);
-  // poll status while running to show updates (simple approach)
+
   const poll = setInterval(async ()=>{
     const res = await fetch('/user/logs/{{ user_id }}');
     const logs = await res.json();
     document.getElementById('status').innerText = 'Tentativas: ' + logs.filter(l=>l.action=='sent_message').length;
   }, 1000);
+
   window._attack_poll = poll;
 });
 
@@ -89,4 +109,5 @@ document.getElementById('stopAttack')?.addEventListener('click', async ()=>{
   document.getElementById('status').innerText = 'Parado';
 });
 </script>
+
 {% endblock %}
