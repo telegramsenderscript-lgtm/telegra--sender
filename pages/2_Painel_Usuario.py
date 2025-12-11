@@ -1,22 +1,53 @@
 import streamlit as st
-from core.auth import check_session
-from core.access_control import has_active_subscription
+import time
+import asyncio
+from core.data import load_user, add_log
+from core.telegram_client import get_client
 
-if not check_session():
-    st.error("Faça login primeiro.")
+st.title("📨 Envio Automático")
+
+user = load_user(st.session_state.user_id)
+
+if not user["active"]:
+    st.error("Sua assinatura está INATIVA.")
     st.stop()
 
-user = st.session_state.user
+client, loop = get_client()
 
-st.title("Seu Painel")
+st.info(f"Número autorizado: **{user['phone']}**")
 
-st.info(f"Status da assinatura: **{'Ativa' if user['active'] else 'Inativa'}**")
+msg = st.text_area("Mensagem (sem ping):")
 
-if not has_active_subscription(user):
-    st.warning("Você precisa de assinatura ativa para continuar.")
-    st.stop()
+if st.button("ENVIAR AUTOMÁTICO"):
 
-st.success("Acesso Premium liberado!")
+    if not msg:
+        st.error("Escreva uma mensagem antes!")
+        st.stop()
 
-st.text_area("Sua mensagem:")
-st.button("Enviar")
+    placeholder = st.empty()
+    attempts = 0
+
+    async def send_loop():
+        nonlocal attempts
+        while True:
+            attempts += 1
+            placeholder.info(f"Tentando enviar... tentativa **{attempts}**")
+
+            try:
+                await client.send_message("me", msg)  # Mude depois
+                return attempts
+            except:
+                await asyncio.sleep(0.05)
+
+    try:
+        total = loop.run_until_complete(send_loop())
+        st.success(f"Mensagem enviada! Tentativas: {total}")
+
+        add_log({
+            "user": st.session_state.user_id,
+            "timestamp": time.time(),
+            "attempts": total
+        })
+
+    except Exception as e:
+        st.error(f"Erro: {e}")
