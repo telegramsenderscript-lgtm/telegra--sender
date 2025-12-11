@@ -1,144 +1,35 @@
 {% extends "base.html" %}
 {% block content %}
 
-<div class="row">
+<h3>Bem-vindo, {{ user.name }}</h3>
+<hr>
 
-  <!-- BLOCO ADMIN -->
-  {% if user.get('role') == 'admin' %}
-  <div class="col-md-12">
-    <div class="card p-3 mb-4 border-danger">
-      <h4>⚙️ Painel Administrativo</h4>
-      <p>Acesso exclusivo do administrador.</p>
-      <a href="/admin" class="btn btn-danger">Gerenciar usuários</a>
-    </div>
-  </div>
-  {% endif %}
+{% if user.role == "admin" %}
 
-  <!-- BLOCO PRINCIPAL -->
-  <div class="col-md-6">
+<a href="/admin" class="btn btn-warning">Gerenciar Usuários</a>
 
-    <div class="card p-3">
-      <h5>Bem-vindo, <b>{{ user_id }}</b></h5>
+{% else %}
 
-      <p class="small-muted">
-        Telefone cadastrado:
-        <b>{{ user.get('phone','(não cadastrado)') }}</b>
-      </p>
+<div class="card p-3">
 
-      <p>Status:
-        {% if user.get('active') %}
-          <span class="text-success">ATIVA</span>
-        {% else %}
-          <span class="text-danger">INATIVA</span>
-        {% endif %}
-      </p>
+  <h4>Enviar Código Telegram</h4>
 
-      {% if user.get('active') %}
-        <button id="sendCode" class="btn btn-primary">📩 Enviar código</button>
-      {% else %}
-        <button class="btn btn-secondary" disabled>Assinatura inativa</button>
-      {% endif %}
-    </div>
+  <button id="btnSend" class="btn btn-primary mt-3">Enviar Código</button>
 
-    <div class="card p-3 mt-3">
-      <h6>Confirmar código</h6>
-      <input id="code" class="form-control mb-2" placeholder="Código recebido">
-      <button id="confirm" class="btn btn-primary">Confirmar</button>
-      <div id="confirmResult" class="mt-2"></div>
-    </div>
-
-    <div class="card p-3 mt-3">
-      <h6>Escolher grupo e enviar</h6>
-
-      <button id="listGroups" class="btn btn-sm btn-primary mb-2">Carregar grupos</button>
-      <select id="groups" class="form-control mb-2"></select>
-
-      <textarea id="message" class="form-control mb-2" placeholder="Mensagem"></textarea>
-
-      <div class="d-flex gap-2">
-        <button id="startAttack" class="btn btn-danger">🚀 ENVIAR EM LOOP</button>
-        <button id="stopAttack" class="btn btn-secondary">❌ CANCELAR</button>
-      </div>
-
-      <div id="status" class="mt-2 small-muted"></div>
-      <div id="ping" class="mt-1 small-muted"></div>
-    </div>
-
-  </div>
 </div>
 
 <script>
-async function postJSON(url, data){
-  const res = await fetch(url, {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify(data)
-  });
-  return res.json();
-}
-
-// ================== SEND CODE ===================
-document.getElementById('sendCode')?.addEventListener('click', async ()=>{
-  const r = await postJSON('/send_code', {});
-  if(r.status === 'code_sent'){
-    window.phone_hash = r.phone_code_hash;
-  }
-  alert(JSON.stringify(r));
-});
-
-// ================== CONFIRM CODE ===================
-document.getElementById('confirm')?.addEventListener('click', async ()=>{
-  const code = document.getElementById('code').value;
-  const r = await postJSON('/confirm_code', {
-    code: code,
-    phone_hash: window.phone_hash || null
-  });
-  document.getElementById('confirmResult').innerText = JSON.stringify(r);
-});
-
-// ================== LIST GROUPS ===================
-document.getElementById('listGroups')?.addEventListener('click', async ()=>{
-  const res = await fetch('/list_groups');
-  const j = await res.json();
-  const sel = document.getElementById('groups');
-  sel.innerHTML = '';
-
-  if(j.status === 'ok'){
-    j.groups.forEach(d=>{
-      const opt = document.createElement('option');
-      opt.value = d.id;
-      opt.text = d.name || d.id;
-      sel.appendChild(opt);
+document.getElementById("btnSend").onclick = async () => {
+    const res = await fetch("/api/send_code", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ phone: "{{ user.phone }}" })
     });
-  } else {
-    alert(JSON.stringify(j));
-  }
-});
 
-// ================== START ATTACK ===================
-document.getElementById('startAttack')?.addEventListener('click', async ()=>{
-  const gid = document.getElementById('groups').value;
-  const msg = document.getElementById('message').value;
-
-  if(!gid || !msg){
-    alert('Preencha grupo e mensagem');
-    return;
-  }
-
-  const r = await postJSON('/start_attack', {
-    chat_id: gid,
-    message: msg
-  });
-
-  document.getElementById('status').innerText = JSON.stringify(r);
-
-});
-
-// ================== STOP ATTACK ===================
-document.getElementById('stopAttack')?.addEventListener('click', async ()=>{
-  await postJSON('/stop_attack', {});
-  document.getElementById('status').innerText = 'Parado';
-});
+    alert(await res.text());
+};
 </script>
+
+{% endif %}
 
 {% endblock %}
