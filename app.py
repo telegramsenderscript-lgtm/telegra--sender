@@ -1,22 +1,25 @@
-# app.py
 import streamlit as st
-from core.auth import login_screen, is_logged_in, get_current_user
-from navigation import setup_navigation
+from core.data import load_users
 
-st.set_page_config(page_title="Telegram Sender", layout="centered")
-setup_navigation()
+def login_screen():
+    st.title("Login – Painel Premium")
 
-# If logged, redirect user by role:
-if is_logged_in():
-    user = get_current_user()
-    role = user.get("role", "user")
-    if role == "admin":
-        st.experimental_set_query_params(page="admin")
-    else:
-        st.experimental_set_query_params(page="user")
-    # show minimal message
-    st.success(f"Você já está logado como {st.session_state.get('user_id')}. Use o menu.")
-    st.stop()
+    users = load_users()
 
-# Not logged => show login screen
-login_screen()
+    uid = st.text_input("Usuário")
+    pwd = st.text_input("Senha", type="password")
+
+    if st.button("Entrar"):
+        if uid in users and users[uid]["password"] == pwd and users[uid]["active"]:
+            st.session_state["logged"] = True
+            st.session_state["role"] = users[uid]["role"]
+            st.session_state["uid"] = uid
+            st.experimental_rerun()
+        else:
+            st.error("Credenciais inválidas ou conta inativa.")
+
+def is_logged_in():
+    return st.session_state.get("logged", False)
+
+def get_current_user():
+    return st.session_state.get("uid", None)
