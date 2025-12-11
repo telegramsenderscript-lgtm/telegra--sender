@@ -28,7 +28,7 @@ def login_screen():
         if user.get("password") != pwd:
             st.error("Senha incorreta.")
             return False
-        # login ok, set session
+        # login ok
         st.session_state.user = uid
         append_user_log(uid, {"action": "login", "ts": now_iso()})
         st.experimental_rerun()
@@ -39,7 +39,6 @@ def logout():
     uid = st.session_state.get("user")
     if uid:
         append_user_log(uid, {"action": "logout", "ts": now_iso()})
-    # clear keys we used
     keys = list(st.session_state.keys())
     for k in keys:
         del st.session_state[k]
