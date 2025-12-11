@@ -1,12 +1,12 @@
 import os
+import json
 from flask import Flask, request, jsonify, render_template, session, redirect, url_for
 from core.auth import is_logged_in, login_user, logout_user, get_current_user
 from core.data import (
     load_users,
-    add_user,
-    edit_user,
-    delete_user,
-    toggle_active
+    save_users,
+    load_logs,
+    clear_logs,
 )
 from core.telegram_client import (
     api_send_code,
@@ -19,7 +19,7 @@ app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "devkey123")
 
 
-# ------------------------- LOGIN -------------------------
+# ========================== LOGIN ==============================
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -28,6 +28,7 @@ def login():
         username = request.form.get("username")
         password = request.form.get("password")
 
+        # login normal
         for uid, u in users.items():
             if uid == username and u["password"] == password:
                 login_user(uid)
@@ -44,87 +45,66 @@ def logout():
     return redirect(url_for("login"))
 
 
-# ------------------------- DASHBOARD -------------------------
+# ========================== DASHBOARD ==============================
 
 @app.route("/")
 def dashboard():
     if not is_logged_in():
         return redirect(url_for("login"))
 
-    user_id = session["user"]
     user = get_current_user()
+    return render_template("dashboard.html", user=user, user_id=session["user"])
 
-    return render_template("dashboard.html", user=user, user_id=user_id)
 
-
-# ------------------------- ADMIN PAGES -------------------------
+# ========================== ADMIN ==============================
 
 @app.route("/admin")
-def admin_page():
+def admin_panel():
+    if not is_logged_in():
+        return redirect(url_for("login"))
+
     user = get_current_user()
-    if not user or user["role"] != "admin":
-        return redirect("/")
+    if user["role"] != "admin":
+        return "Acesso negado."
 
-    return render_template("admin.html")
-
-
-@app.route("/admin/list")
-def admin_list():
-    return jsonify(load_users())
+    users = load_users()
+    return render_template("admin.html", users=users)
 
 
-@app.route("/admin/create", methods=["POST"])
-def admin_create():
-    data = request.json
-    try:
-        add_user(
-            uid=data["uid"],
-            password=data["password"],
-            role="user",
-            active=data["active"],
-            phone=data["phone"]
-        )
-        return jsonify({"status": "ok"})
-    except Exception as e:
-        return jsonify({"status": "error", "error": str(e)})
+@app.route("/admin/update/<uid>", methods=["POST"])
+def admin_update(uid):
+    if not is_logged_in():
+        return redirect(url_for("login"))
+
+    user = get_current_user()
+    if user["role"] != "admin":
+        return "Acesso negado."
+
+    users = load_users()
+
+    if uid not in users:
+        return "Usuário inexistente."
+
+    users[uid]["active"] = request.form.get("active") == "on"
+    save_users(users)
+
+    return redirect(url_for("admin_panel"))
 
 
-@app.route("/admin/edit", methods=["POST"])
-def admin_edit():
-    data = request.json
-    try:
-        edit_user(
-            old_uid=data["uid"],
-            password=data["password"],
-            active=data["active"],
-            phone=data["phone"]
-        )
-        return jsonify({"status": "ok"})
-    except Exception as e:
-        return jsonify({"status": "error", "error": str(e)})
+@app.route("/admin/clear_logs", methods=["POST"])
+def admin_clear_logs():
+    if not is_logged_in():
+        return redirect(url_for("login"))
+
+    user = get_current_user()
+    if user["role"] != "admin":
+        return "Acesso negado."
+
+    clear_logs()
+    return redirect(url_for("admin_panel"))
 
 
-@app.route("/admin/delete", methods=["POST"])
-def admin_delete():
-    data = request.json
-    try:
-        delete_user(data["uid"])
-        return jsonify({"status": "ok"})
-    except Exception as e:
-        return jsonify({"status": "error", "error": str(e)})
-
-
-@app.route("/admin/toggle_active", methods=["POST"])
-def admin_toggle_active():
-    data = request.json
-    try:
-        toggle_active(data["uid"], data["state"])
-        return jsonify({"status": "ok"})
-    except Exception as e:
-        return jsonify({"status": "error", "error": str(e)})
-
-
-# ---------------- TELEGRAM API ----------------
+# ========================== API TELEGRAM ==============================
 
 @app.route("/api/send_code", methods=["POST"])
 def send_code():
@@ -165,6 +145,8 @@ def start_attack():
     res = api_send_message_loop(phone, chat_id, message)
     return jsonify(res)
 
+
+# ========================== RUN ==============================
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
