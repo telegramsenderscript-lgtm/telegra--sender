@@ -1,31 +1,35 @@
 import streamlit as st
-from core.auth import check_session
-from core.users import get_users, create_user, set_active
+from core.data import load_users, save_users
 
+st.title("🔧 Painel ADMIN")
 
-if not check_session() or st.session_state.user["role"] != "admin":
-    st.error("Acesso negado.")
+if st.session_state.user_id != "admin":
+    st.error("Você não é admin.")
     st.stop()
 
-st.title("Painel Administrativo")
+users = load_users()
 
-users = get_users()
-st.subheader("Criar Novo Usuário")
+st.subheader("Usuários cadastrados")
 
-new_user = st.text_input("Novo usuário")
-new_pass = st.text_input("Senha", type="password")
+for uid, data in users.items():
+    st.write(f"### {uid}")
+    st.write(data)
+    st.write("---")
 
-if st.button("Criar Usuário"):
-    create_user(new_user, new_pass, active=False)
-    st.success("Usuário criado!")
-    st.rerun()
+st.subheader("Adicionar novo usuário")
 
-st.subheader("Gerenciar Usuários")
+new_uid = st.text_input("Novo usuário")
+new_pwd = st.text_input("Senha")
+new_phone = st.text_input("Telefone (+55...)")
 
-for u, data in users.items():
-    col1, col2 = st.columns([3, 1])
-    col1.write(f"{u} — Assinatura: {'Ativa' if data['active'] else 'Inativa'}")
+if st.button("Criar"):
+    users[new_uid] = {
+        "password": new_pwd,
+        "active": True,
+        "phone": new_phone,
+        "expires": None
+    }
 
-    if col2.button("Alternar", key=u):
-        set_active(u, not data["active"])
-        st.rerun()
+    save_users(users)
+    st.success("Usuário criado com sucesso!")
+    st.experimental_rerun()
