@@ -1,22 +1,59 @@
-# app.py
 import streamlit as st
-from core.auth import login_screen, is_logged_in, get_current_user
-from navigation import setup_navigation
+from core.data import load_users
 
-st.set_page_config(page_title="Telegram Sender", layout="centered")
-setup_navigation()
+# -------------------------
+# LOGIN CHECK
+# -------------------------
+def is_logged_in():
+    return "user" in st.session_state and st.session_state.user is not None
 
-# If logged, redirect user by role:
-if is_logged_in():
-    user = get_current_user()
-    role = user.get("role", "user")
-    if role == "admin":
-        st.experimental_set_query_params(page="admin")
-    else:
-        st.experimental_set_query_params(page="user")
-    # show minimal message
-    st.success(f"Você já está logado como {st.session_state.get('user_id')}. Use o menu.")
-    st.stop()
 
-# Not logged => show login screen
-login_screen()
+# -------------------------
+# GET CURRENT USER
+# -------------------------
+def get_current_user():
+    if not is_logged_in():
+        return None
+    users = load_users()
+    return users.get(st.session_state.user)
+
+
+# -------------------------
+# LOGOUT
+# -------------------------
+def logout():
+    if "user" in st.session_state:
+        del st.session_state["user"]
+    st.session_state.clear()
+    st.experimental_rerun()
+
+
+# -------------------------
+# LOGIN SCREEN
+# -------------------------
+def login_screen():
+    st.title("🔐 Login — Telegram Sender")
+
+    user_input = st.text_input("Usuário")
+    pwd_input = st.text_input("Senha", type="password")
+
+    if st.button("Entrar"):
+        users = load_users()
+
+        if user_input not in users:
+            st.error("Usuário não encontrado.")
+            return
+
+        user = users[user_input]
+
+        if not user.get("active", False):
+            st.error("Conta inativa.")
+            return
+
+        if user.get("password") != pwd_input:
+            st.error("Senha incorreta.")
+            return
+
+        st.session_state.user = user_input
+        st.success("Login realizado!")
+        st.experimental_rerun()
