@@ -1,146 +1,107 @@
-# core/telegram_client.py
-
 import os
 import asyncio
 from telethon import TelegramClient, errors
-from core.data import save_session, load_session
+from telethon.sessions import StringSession
 
-API_ID = 28942
-API_HASH = "e3db99f0980c6175f3a0f6370676d280"
+API_ID = int(os.environ.get("API_ID") or 0)
+API_HASH = os.environ.get("API_HASH") or ""
 
-SESSIONS_DIR = "sessions"
+SESSIONS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "sessions")
+os.makedirs(SESSIONS_DIR, exist_ok=True)
 
-# ---------- Correção para o Render (não crasha se existir arquivo chamado 'sessions') ----------
-if not os.path.isdir(SESSIONS_DIR):
-    try:
-        os.makedirs(SESSIONS_DIR, exist_ok=True)
-    except FileExistsError:
-        pass
-# -----------------------------------------------------------------------------------------------
-
-
-def get_session_path(phone):
-    """Retorna caminho da sessão do usuário."""
-    safe = phone.replace("+", "")
+def _session_path_for(phone):
+    safe = phone.replace("+","").replace(" ","")
     return os.path.join(SESSIONS_DIR, f"{safe}.session")
 
-
-# -------------- SISTEMA DE EVENT LOOP (CORREÇÃO DO SEU ERRO ATUAL) -----------------
-
-def get_event_loop():
-    """Garante que o loop não mude — correção do erro no Render."""
+# --- sync wrappers used by Flask ---
+def api_send_code(phone):
+    if not phone:
+        return {"status":"error","error":"phone missing"}
+    # try to send code using telethon (sync wrapper)
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            raise RuntimeError()
-        return loop
-    except:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        return loop
+        async def _send():
+            client = TelegramClient(StringSession(), API_ID, API_HASH)
+            await client.connect()
+            res = await client.send_code_request(phone)
+            await client.disconnect()
+            return {"status":"ok","phone_code_hash": getattr(res,"phone_code_hash", None)}
+        res = loop.run_until_complete(_send())
+        return res
+    except Exception as e:
+        return {"status":"error","error": str(e)}
 
-# ---------------------------------------------------------------------------
-
-
-async def send_code(phone):
-    """Envia código de login para o Telegram."""
-    session_path = get_session_path(phone)
-    client = TelegramClient(session_path, API_ID, API_HASH)
-
-    await client.connect()
+def api_confirm_code(phone, code, phone_code_hash=None):
+    if not phone:
+        return {"status":"error","error":"phone missing"}
     try:
-        sent = await client.send_code_request(phone)
-        return {"status": "ok", "phone_code_hash": sent.phone_code_hash}
-    except errors.PhoneNumberInvalidError:
-        return {"status": "error", "error": "Telefone inválido."}
-    finally:
-        await client.disconnect()
-
-
-async def confirm_code(phone, code, phone_hash):
-    """Confirma código enviado ao Telegram."""
-    session_path = get_session_path(phone)
-    client = TelegramClient(session_path, API_ID, API_HASH)
-
-    await client.connect()
-    try:
-        await client.sign_in(phone, code, phone_code_hash=phone_hash)
-        return {"status": "ok"}
-    except errors.SessionPasswordNeededError:
-        return {"status": "2fa"}
-    except errors.PhoneCodeInvalidError:
-        return {"status": "error", "error": "Código inválido."}
-    finally:
-        await client.disconnect()
-
-
-async def get_dialogs(phone):
-    """Retorna grupos disponíveis para selecionar no dropdown."""
-    session_path = get_session_path(phone)
-    client = TelegramClient(session_path, API_ID, API_HASH)
-
-    await client.connect()
-
-    if not await client.is_user_authorized():
-        return {"status": "error", "error": "Não autorizado."}
-
-    dialogs = []
-    async for dialog in client.iter_dialogs():
-        if dialog.is_group or dialog.is_channel:
-            dialogs.append({
-                "id": dialog.id,
-                "title": dialog.title
-            })
-
-    await client.disconnect()
-    return {"status": "ok", "dialogs": dialogs}
-
-
-async def send_message_loop(phone, peer_id, message):
-    """
-    LOOP DE ENVIO:
-    - Fica tentando enviar SEM PARAR
-    - Envia instantaneamente quando o grupo abrir
-    """
-
-    session_path = get_session_path(phone)
-    client = TelegramClient(session_path, API_ID, API_HASH)
-
-    await client.connect()
-
-    if not await client.is_user_authorized():
-        return {"status": "error", "error": "Sessão expirada."}
-
-    while True:
-        try:
-            await client.send_message(peer_id, message)
-            return {"status": "ok", "sent": True}
-        except errors.ChatWriteForbiddenError:
-            # Grupo fechado — continua tentando
-            await asyncio.sleep(0.5)
-        except Exception as e:
-            return {"status": "error", "error": str(e)}
-
-
-# ---------- Funções de interface síncrona (para chamadas Flask) -------------
-
-def async_run(coro):
-    """Executa qualquer função async mantendo o loop estável."""
-    loop = get_event_loop()
-    return loop.run_until_complete(coro)
-
-
-def api_send_code(phone):
-    return async_run(send_code(phone))
-
-
-def api_confirm_code(phone, code, phone_hash):
-    return async_run(confirm_code(phone, code, phone_hash))
-
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        async def _confirm():
+            client = TelegramClient(StringSession(), API_ID, API_HASH)
+            await client.connect()
+            try:
+                await client.sign_in(phone=phone, code=code, phone_code_hash=phone_code_hash)
+            except errors.SessionPasswordNeededError:
+                return {"status":"2fa_required"}
+            except Exception as e:
+                return {"status":"error","error": str(e)}
+            ss = client.session.save()
+            p = _session_path_for(phone)
+            with open(p, "w", encoding="utf-8") as f:
+                f.write(ss)
+            await client.disconnect()
+            return {"status":"ok"}
+        return loop.run_until_complete(_confirm())
+    except Exception as e:
+        return {"status":"error","error": str(e)}
 
 def api_get_dialogs(phone):
-    return async_run(get_dialogs(phone))
-
+    # returns list of groups (requires saved session)
+    p = _session_path_for(phone)
+    if not os.path.exists(p):
+        return {"status":"error","error":"session not found"}
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        async def _dlg():
+            session_str = open(p,"r",encoding="utf-8").read()
+            client = TelegramClient(StringSession(session_str), API_ID, API_HASH)
+            await client.connect()
+            dialogs = []
+            async for d in client.get_dialogs():
+                dialogs.append({"id": d.id, "name": getattr(d, "title", None)})
+            await client.disconnect()
+            return {"status":"ok","dialogs": dialogs}
+        return loop.run_until_complete(_dlg())
+    except Exception as e:
+        return {"status":"error","error": str(e)}
 
 def api_send_message_loop(phone, peer_id, message):
-    return async_run(send_message_loop(phone, peer_id, message))
+    p = _session_path_for(phone)
+    if not os.path.exists(p):
+        return {"status":"error","error":"session not found"}
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        async def _loop_send():
+            session_str = open(p,"r",encoding="utf-8").read()
+            client = TelegramClient(StringSession(session_str), API_ID, API_HASH)
+            await client.connect()
+            if not await client.is_user_authorized():
+                await client.disconnect()
+                return {"status":"error","error":"not authorized"}
+            while True:
+                try:
+                    await client.send_message(int(peer_id), message)
+                    await client.disconnect()
+                    return {"status":"ok"}
+                except errors.ChatWriteForbiddenError:
+                    await asyncio.sleep(0.2)
+                except Exception as e:
+                    await client.disconnect()
+                    return {"status":"error","error": str(e)}
+        return loop.run_until_complete(_loop_send())
+    except Exception as e:
+        return {"status":"error","error": str(e)}
