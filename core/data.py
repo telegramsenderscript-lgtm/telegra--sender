@@ -4,16 +4,25 @@ import os
 import shutil
 from datetime import datetime
 
-USERS_FILE = "assets/users.json"
-GLOBAL_LOG = "assets/logs.json"
-LOGS_DIR = "data/logs"
-SESSIONS_DIR = "sessions"
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ASSETS_DIR = os.path.join(BASE_DIR, "assets")
+USERS_FILE = os.path.join(ASSETS_DIR, "users.json")
+GLOBAL_LOG = os.path.join(ASSETS_DIR, "logs.json")
+
+LOGS_DIR = os.path.join(BASE_DIR, "data", "logs")  # per-user logs stored here
+
+SESSIONS_DIR = ASSETS_DIR  # session files saved as assets/<uid>_session.txt
 
 def ensure_dirs():
-    os.makedirs(os.path.dirname(USERS_FILE), exist_ok=True)
-    os.makedirs(os.path.dirname(GLOBAL_LOG), exist_ok=True)
+    os.makedirs(ASSETS_DIR, exist_ok=True)
     os.makedirs(LOGS_DIR, exist_ok=True)
-    os.makedirs(SESSIONS_DIR, exist_ok=True)
+    # ensure files exist
+    if not os.path.exists(USERS_FILE):
+        with open(USERS_FILE, "w", encoding="utf-8") as f:
+            json.dump({}, f, indent=2, ensure_ascii=False)
+    if not os.path.exists(GLOBAL_LOG):
+        with open(GLOBAL_LOG, "w", encoding="utf-8") as f:
+            json.dump([], f, indent=2, ensure_ascii=False)
 
 def read_json(path, default):
     try:
@@ -26,7 +35,7 @@ def write_json(path, data):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
-# Users functions
+# ---------------- Users ----------------
 def load_users():
     ensure_dirs()
     return read_json(USERS_FILE, {})
@@ -44,17 +53,10 @@ def add_user(uid, password, role="user", active=True, phone=""):
     return users[uid]
 
 def edit_user(old_uid, new_uid=None, password=None, role=None, active=None, phone=None):
-    """
-    Edits user. If new_uid provided and different, rename the user key (move data + logs + session).
-    """
     users = load_users()
     if old_uid not in users:
         raise ValueError("Usuário não existe")
-
-    # get old data
     u = users[old_uid].copy()
-
-    # apply changes
     if password is not None:
         u["password"] = password
     if role is not None:
@@ -63,17 +65,13 @@ def edit_user(old_uid, new_uid=None, password=None, role=None, active=None, phon
         u["active"] = active
     if phone is not None:
         u["phone"] = phone
-
     target_uid = new_uid or old_uid
-
     if target_uid != old_uid:
         if target_uid in users:
             raise ValueError("Novo ID já existe")
-        # create new key and remove old key
         users[target_uid] = u
         del users[old_uid]
         save_users(users)
-        # move logs and session
         _move_user_artifacts(old_uid, target_uid)
     else:
         users[old_uid] = u
@@ -85,10 +83,9 @@ def delete_user(uid):
     if uid in users:
         del users[uid]
         save_users(users)
-    # remove logs and session
     _remove_user_artifacts(uid)
 
-# logs
+# ---------------- Logs ----------------
 def load_global_logs():
     ensure_dirs()
     return read_json(GLOBAL_LOG, [])
@@ -102,71 +99,76 @@ def append_global_log(entry: dict):
     logs.append(entry)
     save_global_logs(logs)
 
-def load_user_logs(uid):
+def user_log_path(uid):
     ensure_dirs()
-    path = os.path.join(LOGS_DIR, f"{uid}.json")
-    return read_json(path, [])
+    return os.path.join(LOGS_DIR, f"{uid}.json")
+
+def load_user_logs(uid):
+    return read_json(user_log_path(uid), [])
 
 def save_user_logs(uid, lst):
-    ensure_dirs()
-    path = os.path.join(LOGS_DIR, f"{uid}.json")
-    write_json(path, lst)
+    write_json(user_log_path(uid), lst)
 
 def append_user_log(uid, entry: dict):
     logs = load_user_logs(uid)
     logs.append(entry)
     save_user_logs(uid, logs)
-    # also global log
     append_global_log({"user": uid, **entry})
 
-# session helpers (for Telethon .session files)
-def get_session_path(uid):
-    ensure_dirs()
-    return os.path.join(SESSIONS_DIR, f"{uid}.session")
+def now_iso():
+    return datetime.utcnow().isoformat()
+
+# ---------------- Sessions (files in assets) ----------------
+def session_file(uid):
+    return os.path.join(SESSIONS_DIR, f"{uid}_session.txt")
+
+def save_session(uid, session_string):
+    path = session_file(uid)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(session_string)
+
+def load_session(uid):
+    p = session_file(uid)
+    if os.path.exists(p):
+        with open(p, "r", encoding="utf-8") as f:
+            return f.read()
+    return None
 
 def remove_session(uid):
-    path = get_session_path(uid)
-    # Telethon may produce multiple files like uid.session, uid.session-journal, etc.
-    base = os.path.splitext(path)[0]
     removed = []
-    for fname in os.listdir(SESSIONS_DIR):
-        if fname.startswith(os.path.basename(base)):
-            try:
-                os.remove(os.path.join(SESSIONS_DIR, fname))
-                removed.append(fname)
-            except:
-                pass
+    p = session_file(uid)
+    try:
+        if os.path.exists(p):
+            os.remove(p)
+            removed.append(os.path.basename(p))
+    except:
+        pass
     return removed
 
 def _move_user_artifacts(old_uid, new_uid):
-    # move logs file
-    old_log = os.path.join(LOGS_DIR, f"{old_uid}.json")
-    new_log = os.path.join(LOGS_DIR, f"{new_uid}.json")
+    # move per-user logs
+    old_log = user_log_path(old_uid)
+    new_log = user_log_path(new_uid)
     try:
         if os.path.exists(old_log):
             shutil.move(old_log, new_log)
-    except Exception:
+    except:
         pass
-    # move session files (any files starting with old_uid)
+    # move session file if exists
+    old_s = session_file(old_uid)
+    new_s = session_file(new_uid)
     try:
-        for fname in os.listdir(SESSIONS_DIR):
-            if fname.startswith(old_uid):
-                src = os.path.join(SESSIONS_DIR, fname)
-                dst = os.path.join(SESSIONS_DIR, fname.replace(old_uid, new_uid, 1))
-                shutil.move(src, dst)
-    except Exception:
+        if os.path.exists(old_s):
+            shutil.move(old_s, new_s)
+    except:
         pass
 
 def _remove_user_artifacts(uid):
-    # remove logs
+    # remove logs and session
+    p = user_log_path(uid)
     try:
-        p = os.path.join(LOGS_DIR, f"{uid}.json")
         if os.path.exists(p):
             os.remove(p)
     except:
         pass
-    # remove sessions
     remove_session(uid)
-
-def now_iso():
-    return datetime.utcnow().isoformat()
