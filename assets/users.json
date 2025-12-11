@@ -1,0 +1,14 @@
+{
+    "cliente01": {
+        "password": "1234",
+        "active": true,
+        "phone": "+5511999999999",
+        "expires": null
+    },
+    "cliente02": {
+        "password": "abcd",
+        "active": false,
+        "phone": "+5511888888888",
+        "expires": null
+    }
+}
