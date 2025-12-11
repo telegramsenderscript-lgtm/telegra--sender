@@ -2,9 +2,11 @@
   "admin": {
     "password": "admin123",
     "role": "admin",
-    "active": true
+    "active": true,
+    "phone": ""
   }
-},
+}
+,
 {
     "cliente01": {
         "password": "1234",
