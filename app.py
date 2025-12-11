@@ -1,5 +1,4 @@
 import os
-import json
 from flask import Flask, request, jsonify, render_template, session, redirect, url_for
 from core.auth import is_logged_in, login_user, logout_user, get_current_user
 from core.data import load_users
@@ -14,7 +13,7 @@ app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "devkey123")
 
 
-# ========================== ROTAS DE AUTENTICAÇÃO ==============================
+# ========================== LOGIN ==============================
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -23,10 +22,10 @@ def login():
         username = request.form.get("username")
         password = request.form.get("password")
 
-        # Agora o username é o próprio UID (admin, cliente01, etc)
-        if username in users and users[username]["password"] == password:
-            login_user(username)
-            return redirect(url_for("dashboard"))
+        for uid, u in users.items():
+            if u.get("username") == username and u.get("password") == password:
+                login_user(uid)
+                return redirect(url_for("dashboard"))
 
         return render_template("login.html", error="Usuário ou senha incorretos.")
 
@@ -48,10 +47,14 @@ def dashboard():
 
     user = get_current_user()
 
-    return render_template("dashboard.html", user=user)
+    return render_template(
+        "dashboard.html",
+        user=user,
+        user_id=session["user"]   # ENVIA O ID DO USUÁRIO PARA O TEMPLATE
+    )
 
 
-# ========================== API TELEGRAM =======================================
+# ========================== API TELEGRAM ==============================
 
 @app.route("/api/send_code", methods=["POST"])
 def send_code():
