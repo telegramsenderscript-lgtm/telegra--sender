@@ -1,28 +1,112 @@
 {% extends "base.html" %}
 {% block content %}
 
-<h3>Painel Administrativo</h3>
+<h3 class="mb-4">⚙️ Painel Administrativo</h3>
 
-<table class="table table-dark table-striped mt-4">
-  <thead>
-    <tr>
-      <th>UID</th>
-      <th>Função</th>
-      <th>Telefone</th>
-      <th>Ativo</th>
-    </tr>
-  </thead>
+<div class="card p-3 mb-4">
+    <h5>➕ Criar Usuário</h5>
+    <div class="row">
+        <div class="col-md-3"><input id="new_uid" class="form-control" placeholder="ID (login)"></div>
+        <div class="col-md-3"><input id="new_pass" class="form-control" placeholder="Senha"></div>
+        <div class="col-md-3"><input id="new_phone" class="form-control" placeholder="Telefone"></div>
+        <div class="col-md-3">
+            <button class="btn btn-success w-100" onclick="createUser()">Criar</button>
+        </div>
+    </div>
+</div>
 
-  <tbody>
-    {% for uid, u in users.items() %}
-    <tr>
-      <td>{{ uid }}</td>
-      <td>{{ u.role }}</td>
-      <td>{{ u.phone }}</td>
-      <td>{{ "Sim" if u.active else "Não" }}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+<div class="card p-3">
+    <h5>👥 Usuários</h5>
+    <table class="table table-dark table-bordered mt-3">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Telefone</th>
+                <th>Assinatura</th>
+                <th>Senha</th>
+                <th>Ações</th>
+            </tr>
+        </thead>
+        <tbody id="usersTable"></tbody>
+    </table>
+</div>
+
+
+<script>
+function loadUsers() {
+    fetch("/admin/list")
+    .then(r => r.json())
+    .then(users => {
+        let html = "";
+        for (let uid in users) {
+            const u = users[uid];
+            html += `
+            <tr>
+                <td>${uid}</td>
+                <td><input class="form-control" id="p_${uid}" value="${u.phone || ""}"></td>
+                <td>
+                    <select class="form-control" id="a_${uid}">
+                        <option value="true" ${u.active ? "selected":""}>Ativa</option>
+                        <option value="false" ${!u.active ? "selected":""}>Inativa</option>
+                    </select>
+                </td>
+                <td><input class="form-control" id="s_${uid}" placeholder="Nova senha"></td>
+                <td>
+                    <button class="btn btn-primary btn-sm" onclick="editUser('${uid}')">Salvar</button>
+                    <button class="btn btn-danger btn-sm" onclick="deleteUser('${uid}')">Excluir</button>
+                </td>
+            </tr>`;
+        }
+        document.getElementById("usersTable").innerHTML = html;
+    });
+}
+
+function createUser() {
+    fetch("/admin/create", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+            uid: document.getElementById("new_uid").value,
+            password: document.getElementById("new_pass").value,
+            phone: document.getElementById("new_phone").value,
+            active: true
+        })
+    }).then(r=>r.json()).then(res=>{
+        alert("Usuário criado!");
+        loadUsers();
+    });
+}
+
+function editUser(uid) {
+    fetch("/admin/edit",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+            uid: uid,
+            password: document.getElementById("s_"+uid).value,
+            phone: document.getElementById("p_"+uid).value,
+            active: document.getElementById("a_"+uid).value === "true"
+        })
+    }).then(r=>r.json()).then(res=>{
+        alert("Salvo!");
+        loadUsers();
+    })
+}
+
+function deleteUser(uid) {
+    if(!confirm("Excluir usuário?")) return;
+
+    fetch("/admin/delete",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ uid })
+    }).then(r=>r.json()).then(res=>{
+        alert("Excluído!");
+        loadUsers();
+    })
+}
+
+loadUsers();
+</script>
 
 {% endblock %}
