@@ -1,116 +1,89 @@
-# core/telegram_client.py
-import asyncio
 import os
+import asyncio
 from telethon import TelegramClient
-from telethon.errors import SessionPasswordNeededError
-from telethon.errors import PhoneCodeInvalidError, PhoneCodeExpiredError
+from telethon.sessions import StringSession
 
-try:
-    from streamlit import secrets
-    API_ID = int(secrets["api_id"])
-    API_HASH = secrets["api_hash"]
-except Exception:
-    # fallback values (you must set real ones in secrets)
-    API_ID = 0
-    API_HASH = ""
-
-SESSIONS_DIR = "assets/sessions"
-
-if not os.path.exists(SESSIONS_DIR):
-    try:
-        os.makedirs(SESSIONS_DIR, exist_ok=True)
-    except Exception:
-        pass  # evita erro no Streamlit Cloud
+# Salvamos as sessões diretamente dentro da pasta "assets"
+SESSIONS_DIR = "assets"  # Não criar subpasta, evita erro no Streamlit Cloud
 
 
-# keep active clients in-memory per Python process
-_active = {}
+def session_file(user_id: str):
+    """Retorna o caminho do arquivo de sessão do usuário."""
+    return os.path.join(SESSIONS_DIR, f"{user_id}_session.txt")
 
-def _session_file(uid):
-    return os.path.join(SESSIONS_DIR, f"{uid}.session")
 
-def _make_client(uid):
-    session = _session_file(uid)
-    client = TelegramClient(session, API_ID, API_HASH)
-    return client
+def save_session(user_id: str, session_string: str):
+    """Salva a sessão do usuário."""
+    with open(session_file(user_id), "w") as f:
+        f.write(session_string)
 
-async def _ensure_connect(client):
+
+def load_session(user_id: str):
+    """Carrega a sessão do usuário, se existir."""
+    path = session_file(user_id)
+    if os.path.exists(path):
+        with open(path, "r") as f:
+            return f.read()
+    return None
+
+
+def delete_session(user_id: str):
+    """Remove a sessão do usuário."""
+    path = session_file(user_id)
+    if os.path.exists(path):
+        os.remove(path)
+
+
+def get_client(user_id: str, api_id: str, api_hash: str):
+    """Carrega o cliente Telegram com a sessão salva ou cria uma nova."""
+    session = load_session(user_id)
+    if session:
+        return TelegramClient(StringSession(session), api_id, api_hash)
+    else:
+        return TelegramClient(StringSession(), api_id, api_hash)
+
+
+async def start_client_for_user(user_id: str, api_id: str, api_hash: str):
+    """Inicia o cliente, envia código e retorna o cliente ativo."""
+    client = get_client(user_id, api_id, api_hash)
+
     if not client.is_connected():
         await client.connect()
 
-async def start_client_for_user(uid, phone):
-    """
-    Creates client and tries to connect. If not authorized, returns "code" state.
-    """
-    client = _make_client(uid)
-    await _ensure_connect(client)
+    return client
 
-    if not await client.is_user_authorized():
-        # request code
-        try:
-            sent = await client.send_code_request(phone)
-            # keep client instance in _active for later confirmation
-            _active[uid] = client
-            return {"status": "code_sent", "phone_code_hash": getattr(sent, "phone_code_hash", None)}
-        except Exception as e:
-            return {"status": "error", "error": str(e)}
-    else:
-        _active[uid] = client
-        return {"status": "authorized"}
 
-async def confirm_code_for_user(uid, phone, code, phone_code_hash=None):
-    """
-    Uses Telethon sign_in to complete login. Returns status.
-    """
-    # create client from session file (or existing)
-    client = _active.get(uid) or _make_client(uid)
-    await _ensure_connect(client)
+async def confirm_code_for_user(user_id: str, api_id: str, api_hash: str, phone: str, code: str):
+    """Finaliza login com código enviado ao Telegram."""
+    client = get_client(user_id, api_id, api_hash)
+
+    await client.connect()
+
     try:
-        if phone_code_hash:
-            await client.sign_in(phone, code, phone_code_hash=phone_code_hash)
-        else:
-            await client.sign_in(phone, code)
-    except SessionPasswordNeededError:
-        return {"status": "2fa_required"}
-    except PhoneCodeInvalidError:
-        return {"status": "invalid_code"}
-    except PhoneCodeExpiredError:
-        return {"status": "code_expired"}
+        await client.sign_in(phone=phone, code=code)
     except Exception as e:
-        return {"status": "error", "error": str(e)}
+        return False, f"Erro ao validar código: {e}"
 
-    _active[uid] = client
-    return {"status": "authorized"}
+    # Após logar, salvar sessão
+    session_string = client.session.save()
+    save_session(user_id, session_string)
 
-async def send_message(uid, target, message):
-    """
-    Sends message using the user's session client.
-    """
-    client = _active.get(uid)
-    if not client:
-        # try instantiate from session file
-        client = _make_client(uid)
-        await _ensure_connect(client)
-        if not await client.is_user_authorized():
-            return {"status": "not_authorized"}
-        _active[uid] = client
+    return True, "Autenticado com sucesso!"
+
+
+async def send_message(user_id: str, api_id: str, api_hash: str, target: str, message: str):
+    """Envia mensagem usando sessão salva."""
+    client = get_client(user_id, api_id, api_hash)
+
+    await client.connect()
 
     try:
         await client.send_message(target, message)
-        return {"status": "ok"}
+        return True, "Mensagem enviada!"
     except Exception as e:
-        return {"status": "error", "error": str(e)}
+        return False, str(e)
 
-async def logout_user(uid):
-    client = _active.get(uid)
-    if client:
-        try:
-            await client.disconnect()
-        except:
-            pass
-        if uid in _active:
-            del _active[uid]
-    # remove session files
-    from core.data import remove_session
-    removed = remove_session(uid)
-    return {"status": "logged_out", "removed_files": removed}
+
+def logout_user(user_id: str):
+    """Remove sessão salva."""
+    delete_session(user_id)
