@@ -1,16 +1,20 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="row justify-content-center">
-  <div class="col-md-5">
-    <div class="card p-4">
-      <h4>Login</h4>
-      {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
-      <form method="POST">
-        <div class="mb-2"><label>Usuário</label><input name="username" class="form-control"></div>
-        <div class="mb-2"><label>Senha</label><input name="password" type="password" class="form-control"></div>
-        <button class="btn btn-primary">Entrar</button>
-      </form>
-    </div>
-  </div>
+
+<div class="col-md-4 mx-auto card p-4">
+
+  <h3 class="text-center mb-3">Login</h3>
+
+  {% if error %}
+  <div class="alert alert-danger">{{ error }}</div>
+  {% endif %}
+
+  <form method="POST">
+    <input class="form-control mb-3" name="username" placeholder="Usuário">
+    <input class="form-control mb-3" name="password" placeholder="Senha" type="password">
+    <button class="btn btn-primary w-100">Entrar</button>
+  </form>
+
 </div>
+
 {% endblock %}
