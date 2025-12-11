@@ -1,7 +1,5 @@
 import streamlit as st
 from core.auth import login_user, is_logged_in, get_current_user
-from core.data import load_users
-import json
 
 st.set_page_config(page_title="Painel Premium", layout="centered")
 
@@ -10,7 +8,6 @@ if "user" not in st.session_state:
 
 st.title("Painel de Controle Premium")
 
-# Se já está logado → mostra painel
 if is_logged_in():
     user = get_current_user()
     st.success(f"Logado como: **{user['username']}**")
@@ -23,8 +20,6 @@ if is_logged_in():
         st.session_state.user = None
         st.rerun()
     st.stop()
-
-# ---- LOGIN ----
 
 st.header("Login")
 username = st.text_input("Usuário")
