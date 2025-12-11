@@ -1,32 +1,32 @@
 # pages/1_Admin.py
 import streamlit as st
-from core.auth import is_logged_in, get_current_user, logout
+from core.auth import is_logged_in, get_current_user
 from core.data import load_users, save_users, add_user, edit_user, delete_user, append_user_log, load_user_logs, remove_session, now_iso
 
-# protect
+# Protection
 if not is_logged_in():
     st.error("Faça login (admin).")
     st.stop()
 
-current = get_current_user()
-if current.get("role") != "admin":
+cur = get_current_user()
+if cur.get("role") != "admin":
     st.error("Acesso restrito ao admin.")
     st.stop()
 
-st.title("🔧 Painel Admin (CRUD)")
+st.title("🔧 Painel Admin — CRUD")
 
 users = load_users()
 
-st.subheader("Usuários (clique para editar)")
+st.subheader("Usuários cadastrados")
 for uid, u in users.items():
-    cols = st.columns([3,1,1,1,1])
-    cols[0].write(f"**{uid}** — {u.get('phone','')}")
-    cols[1].write("Ativo" if u.get("active", False) else "Inativo")
-    cols[2].write(u.get("role","user"))
-    if cols[3].button("Editar", key=f"edit_{uid}"):
+    c0, c1, c2, c3 = st.columns([3,1,1,1])
+    c0.write(f"**{uid}** — {u.get('phone','')}")
+    c1.write("Ativo" if u.get("active", False) else "Inativo")
+    c2.write(u.get("role","user"))
+    if c3.button("Editar", key=f"e_{uid}"):
         st.session_state.edit_uid = uid
         st.experimental_rerun()
-    if cols[4].button("Deletar", key=f"del_{uid}"):
+    if c3.button("Deletar", key=f"d_{uid}"):
         delete_user(uid)
         append_user_log(uid, {"action":"deleted_by_admin","ts": now_iso()})
         st.success("Usuário removido.")
@@ -34,8 +34,8 @@ for uid, u in users.items():
 
 st.markdown("---")
 st.subheader("Criar novo usuário")
-with st.form("create"):
-    new_id = st.text_input("ID (novo)")
+with st.form("create_user"):
+    new_id = st.text_input("ID (ex: cliente123)")
     new_pwd = st.text_input("Senha")
     new_phone = st.text_input("Telefone (+55...)")
     new_active = st.checkbox("Ativo?", value=True)
@@ -54,7 +54,7 @@ if "edit_uid" in st.session_state:
     uid = st.session_state.edit_uid
     st.subheader(f"Editar usuário: {uid}")
     u = users.get(uid, {})
-    with st.form("edit_form"):
+    with st.form("edit"):
         new_uid = st.text_input("Novo ID (deixe igual para não mudar)", value=uid)
         pwd = st.text_input("Senha", value=u.get("password",""))
         phone = st.text_input("Telefone", value=u.get("phone",""))
@@ -74,14 +74,14 @@ if "edit_uid" in st.session_state:
         st.experimental_rerun()
 
 st.markdown("---")
-st.subheader("Ações administrativas")
-sel = st.selectbox("Escolha usuário para ações:", list(users.keys()))
-if st.button("Resetar sessão Telegram (apaga .session)"):
+st.subheader("Ações")
+sel = st.selectbox("Escolha usuário:", list(users.keys()))
+if st.button("Resetar sessão Telegram (apaga sessão)"):
     removed = remove_session(sel)
     append_user_log(sel, {"action":"session_reset_by_admin","removed": removed, "ts": now_iso()})
     st.success(f"Arquivos removidos: {removed}")
 
-if st.button("Ver logs do usuário selecionado"):
+if st.button("Ver logs do usuário"):
     logs = load_user_logs(sel)
     st.write(logs)
-    st.download_button("Baixar logs deste usuário (JSON)", data=str(logs), file_name=f"{sel}_logs.json")
+    st.download_button("Baixar logs (JSON)", data=str(logs), file_name=f"{sel}_logs.json")
