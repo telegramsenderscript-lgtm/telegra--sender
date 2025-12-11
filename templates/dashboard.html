@@ -3,6 +3,7 @@
 
 <div class="row">
 
+  <!-- BLOCO ADMIN -->
   {% if user.get('role') == 'admin' %}
   <div class="col-md-12">
     <div class="card p-3 mb-4 border-danger">
@@ -13,11 +14,17 @@
   </div>
   {% endif %}
 
+  <!-- BLOCO PRINCIPAL -->
   <div class="col-md-6">
 
     <div class="card p-3">
-      <h5>Bem-vindo, {{ user_id }}</h5>
-      <p class="small-muted">Telefone cadastrado: <b>{{ user.get('phone','(não cadastrado)') }}</b></p>
+      <h5>Bem-vindo, <b>{{ user_id }}</b></h5>
+
+      <p class="small-muted">
+        Telefone cadastrado:
+        <b>{{ user.get('phone','(não cadastrado)') }}</b>
+      </p>
+
       <p>Status:
         {% if user.get('active') %}
           <span class="text-success">ATIVA</span>
@@ -42,8 +49,10 @@
 
     <div class="card p-3 mt-3">
       <h6>Escolher grupo e enviar</h6>
+
       <button id="listGroups" class="btn btn-sm btn-primary mb-2">Carregar grupos</button>
       <select id="groups" class="form-control mb-2"></select>
+
       <textarea id="message" class="form-control mb-2" placeholder="Mensagem"></textarea>
 
       <div class="d-flex gap-2">
@@ -52,7 +61,9 @@
       </div>
 
       <div id="status" class="mt-2 small-muted"></div>
+      <div id="ping" class="mt-1 small-muted"></div>
     </div>
+
   </div>
 </div>
 
@@ -66,52 +77,67 @@ async function postJSON(url, data){
   return res.json();
 }
 
+// ================== SEND CODE ===================
 document.getElementById('sendCode')?.addEventListener('click', async ()=>{
-  const r = await postJSON('/api/send_code', { phone: "{{ user.phone }}" });
+  const r = await postJSON('/send_code', {});
+  if(r.status === 'code_sent'){
+    window.phone_hash = r.phone_code_hash;
+  }
   alert(JSON.stringify(r));
-  window.phone_hash = r.phone_code_hash;
 });
 
+// ================== CONFIRM CODE ===================
 document.getElementById('confirm')?.addEventListener('click', async ()=>{
   const code = document.getElementById('code').value;
-  const r = await postJSON('/api/confirm_code', {
-    phone: "{{ user.phone }}",
+  const r = await postJSON('/confirm_code', {
     code: code,
-    phone_hash: window.phone_hash
+    phone_hash: window.phone_hash || null
   });
   document.getElementById('confirmResult').innerText = JSON.stringify(r);
 });
 
+// ================== LIST GROUPS ===================
 document.getElementById('listGroups')?.addEventListener('click', async ()=>{
-  const r = await postJSON('/api/list_groups', { phone: "{{ user.phone }}" });
+  const res = await fetch('/list_groups');
+  const j = await res.json();
   const sel = document.getElementById('groups');
   sel.innerHTML = '';
 
-  if(r.status === 'ok'){
-    r.dialogs.forEach(d=>{
+  if(j.status === 'ok'){
+    j.groups.forEach(d=>{
       const opt = document.createElement('option');
       opt.value = d.id;
-      opt.text = d.title;
+      opt.text = d.name || d.id;
       sel.appendChild(opt);
     });
-  } else alert(JSON.stringify(r));
+  } else {
+    alert(JSON.stringify(j));
+  }
 });
 
+// ================== START ATTACK ===================
 document.getElementById('startAttack')?.addEventListener('click', async ()=>{
   const gid = document.getElementById('groups').value;
   const msg = document.getElementById('message').value;
 
-  const r = await postJSON('/api/start_attack', {
-    phone: "{{ user.phone }}",
+  if(!gid || !msg){
+    alert('Preencha grupo e mensagem');
+    return;
+  }
+
+  const r = await postJSON('/start_attack', {
     chat_id: gid,
     message: msg
   });
 
   document.getElementById('status').innerText = JSON.stringify(r);
+
 });
 
-document.getElementById('stopAttack')?.addEventListener('click', ()=>{
-  document.getElementById('status').innerText = 'Parado (não implementado)';
+// ================== STOP ATTACK ===================
+document.getElementById('stopAttack')?.addEventListener('click', async ()=>{
+  await postJSON('/stop_attack', {});
+  document.getElementById('status').innerText = 'Parado';
 });
 </script>
 
