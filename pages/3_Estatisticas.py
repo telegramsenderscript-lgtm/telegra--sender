@@ -1,12 +1,16 @@
 import streamlit as st
-from core.auth import check_session
-from core.storage import load_json
+import json
 
-if not check_session() or st.session_state.user["role"] != "admin":
-    st.error("Acesso negado.")
-    st.stop()
+st.title("📊 Estatísticas de Uso")
 
-st.title("Estatísticas de Uso")
-logs = load_json("data/logs.json")
+try:
+    logs = json.load(open("assets/logs.json", "r", encoding="utf-8"))
+except:
+    logs = []
 
-st.json(logs)
+if not logs:
+    st.info("Nenhum envio registrado.")
+else:
+    for l in logs:
+        st.write(l)
+        st.write("---")
