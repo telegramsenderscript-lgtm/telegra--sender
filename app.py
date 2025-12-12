@@ -41,8 +41,8 @@ def logout():
 def dashboard():
     if not is_logged_in():
         return redirect(url_for("login"))
-    user = get_current_user()
     user_id = session["user"]
+    user = get_current_user()
     return render_template("dashboard.html", user=user, user_id=user_id)
 
 
@@ -175,7 +175,7 @@ def admin_get_logs(uid):
     return jsonify(user_logs)
 
 
-# ------------------ Telegram API ------------------
+# ------------------ Telegram API (wrappers) ------------------
 @app.route("/api/send_code", methods=["POST"])
 def api_send_code_route():
     data = request.get_json() or {}
@@ -189,8 +189,9 @@ def api_confirm_code_route():
     data = request.get_json() or {}
     phone = data.get("phone")
     code = data.get("code")
-    phone_hash = data.get("phone_hash")
-    res = api_confirm_code(phone, code, phone_hash)
+    # hash opcional: se não enviado, o telegramclient lê do arquivo
+    phone_code_hash = data.get("phone_hash")
+    res = api_confirm_code(phone, code, phone_code_hash)
     return jsonify(res)
 
 
