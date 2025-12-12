@@ -16,15 +16,17 @@ app.secret_key = os.getenv("SECRET_KEY", "devkey123")
 
 
 # ------------------ Auth routes ------------------
-@app.route("/api/confirm_code", methods=["POST"])
-def api_confirm_code_route():
-    data = request.get_json() or {}
-    phone = data.get("phone")
-    code = data.get("code")
-    # phone_hash agora é opcional, backend pega hash salvo se não houver
-    phone_hash = data.get("phone_hash")
-    res = api_confirm_code(phone, code, phone_hash)
-    return jsonify(res)
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        users = load_users()
+        if username in users and users[username]["password"] == password:
+            login_user(username)
+            return redirect(url_for("dashboard"))
+        return render_template("login.html", error="Usuário ou senha incorretos.")
+    return render_template("login.html")
 
 
 @app.route("/logout")
@@ -39,8 +41,8 @@ def logout():
 def dashboard():
     if not is_logged_in():
         return redirect(url_for("login"))
-    user_id = session["user"]
     user = get_current_user()
+    user_id = session["user"]
     return render_template("dashboard.html", user=user, user_id=user_id)
 
 
@@ -173,7 +175,7 @@ def admin_get_logs(uid):
     return jsonify(user_logs)
 
 
-# ------------------ Telegram API (wrappers) ------------------
+# ------------------ Telegram API ------------------
 @app.route("/api/send_code", methods=["POST"])
 def api_send_code_route():
     data = request.get_json() or {}
@@ -213,4 +215,3 @@ def api_start_attack_route():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-
