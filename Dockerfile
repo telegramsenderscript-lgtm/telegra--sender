@@ -1,4 +1,4 @@
-# Usando Python 3.12 oficial
+# Base Python 3.12 slim
 FROM python:3.12-slim
 
 # Diretório da app
@@ -8,11 +8,12 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copia todo o código da app
+# Copia todo o código
 COPY . .
 
-# Expõe a porta do Render
-EXPOSE 10000
+# Usa a porta que o Render define
+ENV PORT=10000
+EXPOSE $PORT
 
-# Comando para iniciar a app
-CMD ["gunicorn", "app:app", "-b", "0.0.0.0:10000"]
+# Inicia a app com gunicorn
+CMD ["gunicorn", "app:app", "-b", "0.0.0.0:$PORT"]
