@@ -6,7 +6,10 @@ from telethon.sessions import StringSession
 API_ID = int(os.environ.get("API_ID") or 0)
 API_HASH = os.environ.get("API_HASH") or ""
 
+# --- Ajuste para garantir que sessions seja um diretório ---
 SESSIONS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "sessions")
+if os.path.exists(SESSIONS_DIR) and not os.path.isdir(SESSIONS_DIR):
+    os.remove(SESSIONS_DIR)
 os.makedirs(SESSIONS_DIR, exist_ok=True)
 
 def _session_path_for(phone):
@@ -17,7 +20,6 @@ def _session_path_for(phone):
 def api_send_code(phone):
     if not phone:
         return {"status":"error","error":"phone missing"}
-    # try to send code using telethon (sync wrapper)
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -27,8 +29,7 @@ def api_send_code(phone):
             res = await client.send_code_request(phone)
             await client.disconnect()
             return {"status":"ok","phone_code_hash": getattr(res,"phone_code_hash", None)}
-        res = loop.run_until_complete(_send())
-        return res
+        return loop.run_until_complete(_send())
     except Exception as e:
         return {"status":"error","error": str(e)}
 
@@ -58,7 +59,6 @@ def api_confirm_code(phone, code, phone_code_hash=None):
         return {"status":"error","error": str(e)}
 
 def api_get_dialogs(phone):
-    # returns list of groups (requires saved session)
     p = _session_path_for(phone)
     if not os.path.exists(p):
         return {"status":"error","error":"session not found"}
