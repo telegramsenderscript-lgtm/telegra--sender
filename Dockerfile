@@ -16,4 +16,4 @@ ENV PORT=10000
 EXPOSE $PORT
 
 # Inicia a app com gunicorn
-CMD ["gunicorn", "app:app", "-b", "0.0.0.0:$PORT"]
+CMD sh -c "gunicorn app:app -b 0.0.0.0:$PORT"
