@@ -3,102 +3,82 @@ import asyncio
 from telethon import TelegramClient, errors
 from telethon.sessions import StringSession
 
-API_ID = int(os.environ.get("API_ID", "0"))
-API_HASH = os.environ.get("API_HASH", "")
+API_ID = int(os.environ["API_ID"])
+API_HASH = os.environ["API_HASH"]
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 SESSIONS_DIR = os.path.join(BASE_DIR, "sessions")
 
-# garante que é pasta
-if os.path.exists(SESSIONS_DIR) and not os.path.isdir(SESSIONS_DIR):
-    os.remove(SESSIONS_DIR)
-
 os.makedirs(SESSIONS_DIR, exist_ok=True)
-
 
 def _safe(phone):
     return phone.replace("+", "").replace(" ", "")
 
-
-def _session_path(phone):
+def _session_file(phone):
     return os.path.join(SESSIONS_DIR, f"{_safe(phone)}.session")
 
-
-def _hash_path(phone):
+def _hash_file(phone):
     return os.path.join(SESSIONS_DIR, f"{_safe(phone)}.hash")
 
+def _run(coro):
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    return loop.run_until_complete(coro)
 
-# ================== ENVIAR CÓDIGO ==================
+# --------- SEND CODE ---------
 def api_send_code(phone):
-    if not phone:
-        return {"status": "error", "error": "phone missing"}
+    async def run():
+        session = StringSession()
+        client = TelegramClient(session, API_ID, API_HASH)
+        await client.connect()
+
+        await client.send_code_request(phone)
+
+        with open(_session_file(phone), "w") as f:
+            f.write(session.save())
+
+        with open(_hash_file(phone), "w") as f:
+            f.write(client._phone_code_hash)
+
+        await client.disconnect()
+        return {"status": "ok"}
 
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-        async def run():
-            session = StringSession()
-            client = TelegramClient(session, API_ID, API_HASH)
-            await client.connect()
-
-            res = await client.send_code_request(phone)
-
-            with open(_session_path(phone), "w") as f:
-                f.write(session.save())
-
-            with open(_hash_path(phone), "w") as f:
-                f.write(res.phone_code_hash)
-
-            await client.disconnect()
-            return {"status": "ok"}
-
-        return loop.run_until_complete(run())
-
+        return _run(run())
     except Exception as e:
         return {"status": "error", "error": str(e)}
 
-
-# ================== CONFIRMAR CÓDIGO ==================
+# --------- CONFIRM CODE ---------
 def api_confirm_code(phone, code):
-    if not phone or not code:
-        return {"status": "error", "error": "phone or code missing"}
-
-    sp = _session_path(phone)
-    hp = _hash_path(phone)
-
-    if not os.path.exists(sp) or not os.path.exists(hp):
-        return {"status": "error", "error": "request new code"}
-
     try:
-        session_str = open(sp).read()
-        phone_code_hash = open(hp).read().strip()
+        session_str = open(_session_file(phone)).read()
+        phone_code_hash = open(_hash_file(phone)).read()
+    except:
+        return {"status": "error", "error": "session missing"}
 
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+    async def run():
+        client = TelegramClient(
+            StringSession(session_str),
+            API_ID,
+            API_HASH
+        )
+        await client.connect()
 
-        async def run():
-            client = TelegramClient(StringSession(session_str), API_ID, API_HASH)
-            await client.connect()
+        try:
+            await client.sign_in(
+                phone=phone,
+                code=code,
+                phone_code_hash=phone_code_hash
+            )
+        except errors.SessionPasswordNeededError:
+            return {"status": "2fa_required"}
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
 
-            try:
-                await client.sign_in(
-                    phone=phone,
-                    code=code,
-                    phone_code_hash=phone_code_hash
-                )
-            except errors.SessionPasswordNeededError:
-                return {"status": "2fa_required"}
-            except Exception as e:
-                return {"status": "error", "error": str(e)}
+        with open(_session_file(phone), "w") as f:
+            f.write(client.session.save())
 
-            with open(sp, "w") as f:
-                f.write(client.session.save())
+        await client.disconnect()
+        return {"status": "ok"}
 
-            await client.disconnect()
-            return {"status": "ok"}
-
-        return loop.run_until_complete(run())
-
-    except Exception as e:
-        return {"status": "error", "error": str(e)}
+    return _run(run())
