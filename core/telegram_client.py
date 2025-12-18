@@ -9,21 +9,20 @@ API_HASH = os.environ.get("API_HASH") or ""
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 SESSIONS_DIR = os.path.join(BASE_DIR, "sessions")
 
-# 🔥 CORREÇÃO DEFINITIVA
+# garante que sessions seja pasta
 if os.path.exists(SESSIONS_DIR) and not os.path.isdir(SESSIONS_DIR):
     os.remove(SESSIONS_DIR)
-
 os.makedirs(SESSIONS_DIR, exist_ok=True)
 
 
 def _safe(phone):
     return phone.replace("+", "").replace(" ", "")
 
-def _session_path(phone):
-    return os.path.join(SESSIONS_DIR, f"{_safe(phone)}.session")
+def _pending_session(phone):
+    return os.path.join(SESSIONS_DIR, f"{_safe(phone)}.pending")
 
-def _hash_path(phone):
-    return os.path.join(SESSIONS_DIR, f"{_safe(phone)}.hash")
+def _final_session(phone):
+    return os.path.join(SESSIONS_DIR, f"{_safe(phone)}.session")
 
 
 # ================== ENVIAR CÓDIGO ==================
@@ -39,11 +38,9 @@ def api_send_code(phone):
 
             await client.send_code_request(phone)
 
-            with open(_session_path(phone), "w") as f:
+            # salva session pendente
+            with open(_pending_session(phone), "w") as f:
                 f.write(session.save())
-
-            with open(_hash_path(phone), "w") as f:
-                f.write(client._phone_code_hash)
 
             await client.disconnect()
             return {"status": "ok"}
@@ -57,14 +54,12 @@ def api_send_code(phone):
 # ================== CONFIRMAR CÓDIGO ==================
 def api_confirm_code(phone, code):
     try:
-        sp = _session_path(phone)
-        hp = _hash_path(phone)
+        pending = _pending_session(phone)
 
-        if not os.path.exists(sp) or not os.path.exists(hp):
-            return {"status": "error", "error": "session missing"}
+        if not os.path.exists(pending):
+            return {"status": "error", "error": "no pending session"}
 
-        session_str = open(sp).read()
-        phone_code_hash = open(hp).read().strip()
+        session_str = open(pending).read()
 
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -74,19 +69,17 @@ def api_confirm_code(phone, code):
             await client.connect()
 
             try:
-                await client.sign_in(
-                    phone=phone,
-                    code=code,
-                    phone_code_hash=phone_code_hash
-                )
+                await client.sign_in(phone=phone, code=code)
             except errors.SessionPasswordNeededError:
                 return {"status": "2fa_required"}
             except Exception as e:
                 return {"status": "error", "error": str(e)}
 
-            with open(sp, "w") as f:
+            # salva session final
+            with open(_final_session(phone), "w") as f:
                 f.write(client.session.save())
 
+            os.remove(pending)
             await client.disconnect()
             return {"status": "ok"}
 
