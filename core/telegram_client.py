@@ -8,7 +8,13 @@ API_HASH = os.environ.get("API_HASH") or ""
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 SESSIONS_DIR = os.path.join(BASE_DIR, "sessions")
+
+# 🔥 CORREÇÃO DEFINITIVA
+if os.path.exists(SESSIONS_DIR) and not os.path.isdir(SESSIONS_DIR):
+    os.remove(SESSIONS_DIR)
+
 os.makedirs(SESSIONS_DIR, exist_ok=True)
+
 
 def _safe(phone):
     return phone.replace("+", "").replace(" ", "")
